@@ -146,10 +146,9 @@ using json = nlohmann::json;
 // How often to check for new multicast subscriptions on a tap device
 #define ZT_TAP_CHECK_MULTICAST_INTERVAL 5000
 
-// TCP fallback relay (run by ZeroTier, Inc. -- this will eventually go away)
-#ifndef ZT_SDK
-#define ZT_TCP_FALLBACK_RELAY "204.80.128.1/443"
-#endif
+// TCP fallback relay (official ZeroTier relay removed for ZGALAXY).
+// The fallback TCP relay feature is disabled entirely; ZGALAXY nodes
+// rely on the ZGALAXY planet roots for connectivity.
 
 // Frequency at which we re-resolve the TCP fallback relay
 #define ZT_TCP_FALLBACK_RERESOLVE_DELAY 86400000

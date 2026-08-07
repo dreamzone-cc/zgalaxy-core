@@ -99,13 +99,13 @@ using namespace ZeroTier;
 
 static OneService* volatile zt1Service = (OneService*)0;
 
-#define PROGRAM_NAME	 "ZeroTier One"
-#define COPYRIGHT_NOTICE "Copyright (c) ZeroTier, Inc."
+#define PROGRAM_NAME	 "ZGALAXY One"
+#define COPYRIGHT_NOTICE "Copyright (c) ZeroTier, Inc. / ZGALAXY (dreamzone-cc)"
 
 #ifdef ZT_NONFREE_CONTROLLER
-#define LICENSE_GRANT ZT_EOL_S "Licensed under a Source-Available License for Non-Commercial" ZT_EOL_S "Use (nonfree/LICENSE.md). Use of this build for Commercial Use" ZT_EOL_S "requires a paid subscription plan or a commercial license" ZT_EOL_S "agreement with ZeroTier, Inc. Visit https://www.zerotier.com for" ZT_EOL_S "more information."
+#define LICENSE_GRANT ZT_EOL_S "ZGALAXY build. Controller component licensed under the ZeroTier" ZT_EOL_S "Source-Available License for Non-Commercial Use (nonfree/LICENSE.md)." ZT_EOL_S "Node/agent components licensed under Mozilla Public License v2.0." ZT_EOL_S "This build connects exclusively to the ZGALAXY planet infrastructure."
 #else
-#define LICENSE_GRANT "Licensed under Mozilla Public License v2.0 (LICENSE-MPL.txt)."
+#define LICENSE_GRANT "ZGALAXY build. Licensed under Mozilla Public License v2.0 (LICENSE-MPL.txt). This build connects exclusively to the ZGALAXY planet infrastructure."
 #endif
 
 /****************************************************************************/

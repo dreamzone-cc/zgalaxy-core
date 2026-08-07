@@ -39,18 +39,13 @@
 #define ZT_WORLD_MAX_SERIALIZED_LENGTH (((1024 + (32 * ZT_WORLD_MAX_STABLE_ENDPOINTS_PER_ROOT)) * ZT_WORLD_MAX_ROOTS) + ZT_ECC_PUBLIC_KEY_SET_LEN + ZT_ECC_SIGNATURE_LEN + 128)
 
 /**
- * World ID for Earth
+ * World ID used by the ZGALAXY planet
  *
- * This is the ID for the ZeroTier World used on planet Earth. It is unrelated
- * to the public network 8056c2e21c000001 of the same name. It was chosen
- * from Earth's approximate distance from the sun in kilometers.
+ * ZGALAXY operates its own private planet (world) for the ZGALAXY mesh
+ * infrastructure. The ID is kept as a numeric identifier for the default
+ * ZGALAXY world baked into ZT_DEFAULT_WORLD (see node/Topology.cpp).
  */
-#define ZT_WORLD_ID_EARTH 149604618
-
-/**
- * World ID for Mars -- for future use by SpaceX or others
- */
-#define ZT_WORLD_ID_MARS 227883110
+#define ZT_WORLD_ID_ZGALAXY 149604618
 
 namespace ZeroTier {
 

@@ -146,3 +146,12 @@ snap/.snapcraft
 
 # local Claude configurations
 .claude/*.local.*
+
+# ZGALAXY: never commit secrets or local infra state
+*.api_token
+*cloudflare*config*
+*.secret
+*.key
+config/
+.env
+.env.*
