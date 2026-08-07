@@ -1,0 +1,101 @@
+name: ZGALAXY Core CI
+
+on:
+  push:
+    branches: [zgalaxy-core, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  security-audit:
+    name: Security audit (no official service refs)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: No official ZeroTier endpoints in source
+        run: |
+          set -e
+          ! grep -rInE "my\.zerotier\.com|central\.zerotier\.com|updates\.zerotier\.com|download\.zerotier\.com|204\.80\.128\." \
+            node/ service/ one.cpp osdep/ || \
+            { echo "ERROR: official ZeroTier reference found"; exit 1; }
+          echo "OK: no official ZeroTier endpoints in engine"
+
+      - name: No TCP fallback relay define
+        run: |
+          set -e
+          ! grep -nE "ZT_TCP_FALLBACK_RELAY\s+\"" service/OneService.cpp || \
+            { echo "ERROR: TCP fallback relay re-added"; exit 1; }
+          echo "OK: TCP fallback relay removed"
+
+      - name: Embedded planet matches zgalaxy/planet.bin
+        run: |
+          python3 - <<'EOF'
+          import re, pathlib
+          src = pathlib.Path('node/Topology.cpp').read_text()
+          m = re.search(r'ZT_DEFAULT_WORLD\[ZT_DEFAULT_WORLD_LENGTH\] = \{(.*?)\};', src, re.S)
+          if not m:
+              raise SystemExit("ERROR: ZT_DEFAULT_WORLD array not found")
+          arr = bytes(int(x, 16) for x in re.findall(r'0x([0-9a-f]{2})', m.group(1)))
+          planet = pathlib.Path('zgalaxy/planet.bin').read_bytes()
+          assert arr == planet, f"planet mismatch: array={len(arr)}B planet={len(planet)}B"
+          print(f"OK: embedded planet ({len(arr)} bytes) == zgalaxy/planet.bin")
+          EOF
+
+      - name: No secrets committed
+        run: |
+          set -e
+          ! grep -rInE "cfat_|apiToken|api[_-]?key|147x147x|dz[0-9]+@|PRIVATE KEY" \
+            --exclude-dir=ext --exclude-dir=rustybits --exclude-dir=java --exclude-dir=windows . || \
+            { echo "ERROR: possible secret committed"; exit 1; }
+          echo "OK: no secrets"
+
+  build-linux:
+    name: Build (Ubuntu x64)
+    runs-on: ubuntu-latest
+    needs: security-audit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Set up cargo cache
+        uses: Swatinem/rust-cache@v2
+        continue-on-error: false
+        with:
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rustybits/Cargo.lock') }}
+          shared-key: ${{ runner.os }}-cargo-
+          workspaces: |
+            rustybits/
+
+      - name: Build
+        run: make -j$(nproc)
+
+      - name: Verify branding
+        run: |
+          ./zerotier-one -h | head -1 | grep -q "ZGALAXY One" && echo "OK: branding = ZGALAXY One"
+          ./zerotier-one -v | grep -q "1.16.2" && echo "OK: version 1.16.2"
+
+      - name: Verify no official refs in binary
+        run: |
+          set -e
+          for pat in "204.80.128" "my.zerotier" "central.zerotier" "updates.zerotier"; do
+            ! strings zerotier-one | grep -q "$pat" || { echo "ERROR: '$pat' found in binary"; exit 1; }
+          done
+          echo "OK: binary is free of official ZeroTier references"
+
+      - name: Archive binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: zerotier-one-ubuntu-x64
+          path: |
+            zerotier-one
+            zerotier-idtool
+            zerotier-cli
+          retention-days: 7
