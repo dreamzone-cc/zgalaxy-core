@@ -1,0 +1,49 @@
+name: Windows Build
+
+on:
+  push:
+    branches: [zgalaxy-core]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Build ZGALAXY One (Windows x64) + installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust (x86_64-pc-windows-msvc)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build engine binaries
+        shell: pwsh
+        run: .\windows\build-windows.ps1
+
+      - name: Verify no official ZeroTier references
+        shell: pwsh
+        run: |
+          $bytes = [System.IO.File]::ReadAllText((Resolve-Path ".\windows\dist\zerotier-one.exe"))
+          foreach ($m in @("my.zerotier.com","central.zerotier.com","204.80.128")) {
+            if ($bytes -match $m) { throw "Official reference found: $m" }
+          }
+          Write-Host "No official references OK"
+          & .\windows\dist\zerotier-one.exe -v
+
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
+      - name: Build Windows installer (NSIS)
+        shell: pwsh
+        run: |
+          $nsis = (Get-ChildItem "$env:ProgramFiles(x86)\NSIS\makensis.exe" -ErrorAction SilentlyContinue).FullName
+          if (-not $nsis) { $nsis = "makensis" }
+          & $nsis ".\windows\installer\ZGALAXY-One.nsi"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zgalaxy-one-windows-x64
+          path: |
+            windows\dist\*.exe
+            windows\installer\ZGALAXY-One-Setup.exe
+          if-no-files-found: error
