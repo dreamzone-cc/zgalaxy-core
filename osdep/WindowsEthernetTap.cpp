@@ -17,7 +17,6 @@
 
 #include <IPHlpApi.h>
 #include <SetupAPI.h>
-#include <atlbase.h>
 #include <cfgmgr32.h>
 #include <iostream>
 #include <malloc.h>

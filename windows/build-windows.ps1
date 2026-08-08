@@ -81,6 +81,32 @@ if (-not (Test-Path $oneExe)) { throw "Expected binary not found: $oneExe" }
 Copy-Item $oneExe "$dist\zerotier-one.exe" -Force
 Copy-Item $oneExe "$dist\zerotier-cli.exe" -Force
 Copy-Item $oneExe "$dist\zerotier-idtool.exe" -Force
+Copy-Item $oneExe "$dist\zgalaxy-one.exe" -Force
+Copy-Item $oneExe "$dist\zgalaxy-cli.exe" -Force
+
+# Copy NDIS6 TAP virtual network adapter driver
+$driverSrc = Join-Path $SrcDir "ext\bin\tap-windows-ndis6\x64"
+if (Test-Path $driverSrc) {
+    $driverDst = Join-Path $dist "driver"
+    New-Item -ItemType Directory -Force -Path $driverDst | Out-Null
+    Copy-Item "$driverSrc\*" $driverDst -Force
+    Write-Host "Driver assets bundled: $driverDst" -ForegroundColor Green
+}
+
+# ---- 6. Build NSIS Installer if makensis is present ---------------------------
+$makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+if (-not (Test-Path $makensis)) {
+    $makensisCmd = Get-Command makensis.exe -ErrorAction SilentlyContinue
+    if ($makensisCmd) { $makensis = $makensisCmd.Source }
+}
+
+if (Test-Path $makensis) {
+    Write-Host "Building NSIS installer..." -ForegroundColor Cyan
+    & $makensis "$SrcDir\windows\installer\ZGALAXY-One.nsi"
+    if ($LASTEXITCODE -ne 0) { Write-Warning "NSIS build returned exit code $LASTEXITCODE" }
+} else {
+    Write-Host "makensis not found; skipping installer creation." -ForegroundColor Yellow
+}
 
 Write-Host "== Build complete. Outputs in: $dist ==" -ForegroundColor Green
-Get-ChildItem $dist | Select-Object Name, Length
+Get-ChildItem -Recurse $dist | Select-Object FullName, Length

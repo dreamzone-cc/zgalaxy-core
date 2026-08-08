@@ -7,9 +7,15 @@ on:
 
 jobs:
   windows:
-    name: Build ZGALAXY One (Windows x64) + installer
-    runs-on: windows-latest
+    name: Build ZGALAXY One (Windows x64 - Self-Hosted)
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 90
     steps:
+      - name: Clean Workspace Environment
+        shell: pwsh
+        run: |
+          Get-Process -Name "zerotier-one", "zerotier-cli", "cl", "link", "cargo", "rustc", "msbuild" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
       - uses: actions/checkout@v4
 
       - name: Set up Rust (x86_64-pc-windows-msvc)

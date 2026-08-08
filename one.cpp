@@ -28,7 +28,6 @@
 #include <wchar.h>
 #include <lmcons.h>
 #include <newdev.h>
-#include <atlbase.h>
 #include <iphlpapi.h>
 #include <iomanip>
 #include <shlobj.h>
