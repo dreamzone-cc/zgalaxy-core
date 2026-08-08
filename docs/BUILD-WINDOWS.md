@@ -66,3 +66,16 @@ C:\Program Files\ZGALAXY One\zerotier-cli.exe join <network-id>
 ```
 The `planetWorldId` reported must be `149604618` (ZGALAXY planet) and
 `listpeers` must show only ZGALAXY infrastructure.
+
+## IP-agnostic build (same as Linux)
+
+The Windows build uses the same source as Linux, so it **also ships WITHOUT any
+baked IP address** (`node/Topology.cpp` has no embedded world). The current
+planet — with the live ZGALAXY IP — must be supplied at run time.
+
+- On first run the client writes the (empty) default world and is offline until
+  a real `planet` file is placed in `%ProgramData%\ZeroTier\One\`.
+- The Linux companion watchdog (`client/zgalaxy-watch.sh`) is systemd-based; a
+  Windows equivalent (Task Scheduler or a small service that copies the planet
+  from the ZGALAXY engine and restarts the service on disconnect) is planned
+  for the Windows release.

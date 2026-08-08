@@ -39,11 +39,14 @@ The ZeroTier networking **engine, protocol, cryptography, NAT traversal, and Pla
 
 | File | Change |
 |------|--------|
-| `node/Topology.cpp` | Replaced the baked-in official Earth planet (570 bytes) with the ZGALAXY planet (271 bytes, root `069ae38092` @ `192.168.1.171/9994`, `dz.dreamzone.cc/9994`) |
+| `node/Topology.cpp` | **No baked default world at all** — the client ships IP-agnostic (no embedded IP). The current ZGALAXY planet (root `069ae38092`, `dz.dreamzone.cc`) is supplied at run time by the companion watchdog |
 | `service/OneService.cpp` | Removed the official `ZT_TCP_FALLBACK_RELAY "204.80.128.1/443"` define — the entire TCP fallback feature is compiled out |
 | `node/World.hpp` | `ZT_WORLD_ID_EARTH` → `ZT_WORLD_ID_ZGALAXY` |
 | `one.cpp` | `PROGRAM_NAME "ZGALAXY One"`, updated license grant text |
 | `version.h` | `ZEROTIER_ONE_NAME "zgalaxy-one"` |
+| `client/` | Companion **connectivity watchdog** (`zgalaxy-watch` + `zgalaxy-planet-sync`): event-driven dynamic-IP resolver — reacts only on disconnection, resolves `dz.dreamzone.cc`, applies the updated planet and re-links automatically |
+
+**Install:** `curl -sSL https://raw.githubusercontent.com/dreamzone-cc/zgalaxy-core/zgalaxy-core/install.sh | sudo bash`
 
 ## License
 

@@ -64,3 +64,74 @@ strings zerotier-one | grep -E "204\.80\.128|my\.zerotier|central\.zerotier|upda
 ```
 
 See [VERIFICATION.md](VERIFICATION.md) for the full verification checklist.
+
+## IP-agnostic build (no embedded IP addresses)
+
+Since the round of changes for dynamic-IP support, **the client binary ships
+WITHOUT any baked default world / IP address** (`node/Topology.cpp` no longer
+embeds a world). Consequences:
+
+- `strings zerotier-one` contains **no** service IPs (e.g. `192.168.`, the
+  ZGALAXY public IP, the legacy `154.253.231.164`, etc.).
+- On first boot the client has no planet roots (`planetWorldId 0`, offline).
+- The current planet — with the **live** ZGALAXY IP — is supplied at run time
+  by the companion module (below), so the client never needs rebuilding when
+  the service's public address changes.
+
+Verify after building:
+
+```bash
+strings zerotier-one | grep -cE "192\.168\.|105\.97\.|154\.253\.|0\.0\.0\.0/9994"   # expect 0
+```
+
+## Companion module: connectivity watchdog (reactive dynamic IP)
+
+ZeroTier's engine is IP-only — it cannot resolve hostname endpoints. Dynamic-IP
+handling is therefore delegated to a module installed **alongside** the client:
+
+| File | Purpose |
+|------|---------|
+| `client/zgalaxy-watch.sh` + `zgalaxy-watch.service` | Runs continuously; every 10 s checks whether the client is connected to the ZGALAXY root. **When connected it does nothing.** Only on a detected disconnection does it act. |
+| `client/zgalaxy-planet-sync.sh` | The action: resolves `dz.dreamzone.cc`, fetches the updated planet (with the current IP) from the ZGALAXY engine, applies it and restarts `zerotier-one` to re-link automatically. |
+
+This is **event-driven, not periodic** — while the connection is healthy there
+is no planet fetching.
+
+## Install (one-line, recommended)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/dreamzone-cc/zgalaxy-core/zgalaxy-core/install.sh | sudo bash
+```
+
+`install.sh`:
+
+1. detects the distro, installs build deps + Rust,
+2. builds ZGALAXY One from source (`ZT_NONFREE=1`, **no baked IP**),
+3. installs binaries to `/usr/sbin` and a systemd service,
+4. installs + starts the **connectivity watchdog** (`zgalaxy-watch.service`),
+5. applies the current planet immediately so the client connects on first boot.
+
+## Prebuilt binaries (no build required)
+
+Ready-to-run, IP-agnostic binaries are shipped in `dist/` and on the
+[v1.16.2-zgalaxy release](https://github.com/dreamzone-cc/zgalaxy-core/releases):
+
+| File | Platform |
+|------|----------|
+| `zgalaxy-one-linux-x86_64-ubuntu26` | Ubuntu 26.04+ |
+| `zgalaxy-one-linux-x86_64-glibc2.39` | Ubuntu 24.04+ / Debian 13+ |
+| `zgalaxy-one-linux-x86_64-arch` | Arch Linux |
+
+All three are built from the same source and contain **no embedded IPs**.
+
+## Building on the Ubuntu Server
+
+On Ubuntu, run `install.sh` (it clones, builds and installs in place) — or
+build manually:
+
+```bash
+cd /opt/zgalaxy-one-src          # after install.sh, or clone the repo here
+git fetch origin zgalaxy-core && git reset --hard FETCH_HEAD
+make clean && make ZT_NONFREE=1 -j$(nproc)
+sudo install -m755 zerotier-one /usr/sbin/zerotier-one
+```
