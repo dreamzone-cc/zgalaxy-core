@@ -23,20 +23,18 @@ namespace ZeroTier {
  * and 154.253.231.164/9994. This replaces the official ZeroTier default
  * world baked into the binary. */
 /*
- * NOTE: this build deliberately ships an EMPTY default world (no root
+ * NOTE: this build deliberately ships WITHOUT a baked default world (no root
  * endpoints, no IP addresses). Dynamic-IP resolution is delegated entirely to
  * the companion module (client/zgalaxy-planet-sync.sh) which is installed
  * alongside the client and supplies the current planet (with the live IP) via
  * /var/lib/zerotier-one/planet. This keeps the client binary IP-agnostic so it
  * never needs rebuilding when the service's public address changes.
- * Layout: version(1) + worldId(8) + ts(8) + type(1) + rootCount(1) = 19 bytes.
+ *
+ * The constructor therefore does NOT add a default world; the client only
+ * uses the planet provided by the module (or by the operator).
  */
-#define ZT_DEFAULT_WORLD_LENGTH 19
-static const unsigned char ZT_DEFAULT_WORLD[ZT_DEFAULT_WORLD_LENGTH] = {
-	0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00
-};
+#define ZT_DEFAULT_WORLD_LENGTH 0
+static const unsigned char ZT_DEFAULT_WORLD[1] = { 0x00 };
 
 Topology::Topology(const RuntimeEnvironment* renv, void* tPtr) : RR(renv), _numConfiguredPhysicalPaths(0), _amUpstream(false)
 {
@@ -55,12 +53,10 @@ Topology::Topology(const RuntimeEnvironment* renv, void* tPtr) : RR(renv), _numC
 		}	// ignore invalid cached planets
 	}
 
-	World defaultPlanet;
-	{
-		Buffer<ZT_DEFAULT_WORLD_LENGTH> wtmp(ZT_DEFAULT_WORLD, ZT_DEFAULT_WORLD_LENGTH);
-		defaultPlanet.deserialize(wtmp, 0);	  // throws on error, which would indicate a bad static variable up top
-	}
-	addWorld(tPtr, defaultPlanet, false);
+	// No baked default world: the client is IP-agnostic. The companion module
+	// (zgalaxy-planet-sync) supplies the current planet via the planet file,
+	// which is loaded above from ZT_STATE_OBJECT_PLANET.
+	(void)tPtr;
 }
 
 Topology::~Topology()
