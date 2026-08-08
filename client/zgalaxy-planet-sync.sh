@@ -59,7 +59,9 @@ fi
 mv -f "$TMP_FILE" "$PLANET_FILE"
 chmod 644 "$PLANET_FILE"
 
-if command -v systemctl >/dev/null 2>&1 && systemctl is-active zerotier-one >/dev/null 2>&1; then
-  systemctl restart zerotier-one || true
+# Always (re)start the client — including the case where it was stopped, since
+# a stopped client is the very definition of "disconnected".
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl restart zerotier-one || systemctl start zerotier-one || true
 fi
 log "re-linked. resolved IP in use: ${IP:-unknown}"

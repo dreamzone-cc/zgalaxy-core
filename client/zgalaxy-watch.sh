@@ -21,6 +21,6 @@ log() { echo "[zgalaxy-watch] $*"; }
 log "watchdog started (check every ${CHECK_INTERVAL}s)."
 
 while true; do
-  "$SYNC"        # connected → no-op; disconnected → resolve + re-link
+  "$SYNC" || true   # connected → no-op; disconnected → resolve + re-link
   sleep "$CHECK_INTERVAL"
 done
