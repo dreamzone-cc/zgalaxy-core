@@ -107,20 +107,32 @@ Section "Core Engine & Binaries (Required)" SecMain
     CopyFiles /SILENT "$INSTDIR\zerotier-cli.exe" "$INSTDIR\zgalaxy-cli.exe"
     CopyFiles /SILENT "$INSTDIR\zerotier_desktop_ui.exe" "$INSTDIR\zgalaxy_desktop_ui.exe"
 
-  ; 2. Copy and Register NDIS6 Virtual Adapter TAP Driver
+  ; 2. Copy and Register NDIS6 Virtual Adapter TAP Driver in $INSTDIR and DriverStore
   DetailPrint "Installing NDIS6 TAP virtual network adapter driver..."
+  SetOutPath "$INSTDIR"
+  File "..\dist\driver\zttap300.inf"
+  File "..\dist\driver\zttap300.sys"
+  File "..\dist\driver\zttap300.cat"
+  
   SetOutPath "$INSTDIR\driver"
   File "..\dist\driver\zttap300.inf"
   File "..\dist\driver\zttap300.sys"
   File "..\dist\driver\zttap300.cat"
   SetOutPath "$INSTDIR"
   
-  nsExec::ExecToLog 'pnputil.exe /add-driver "$INSTDIR\driver\zttap300.inf" /install'
+  ; Copy driver to ProgramData as secondary lookup path for WindowsEthernetTap
+  SetShellVarContext all
+  CreateDirectory "$APPDATA\ZeroTier\One"
+  CopyFiles /SILENT "$INSTDIR\driver\*" "$APPDATA\ZeroTier\One\"
+  SetShellVarContext current
+  
+  nsExec::ExecToLog 'pnputil.exe /add-driver "$INSTDIR\zttap300.inf" /install'
 
   ; 3. Create Start Menu & Desktop Shortcuts
   DetailPrint "Creating Start Menu & Desktop shortcuts..."
   CreateDirectory "$SMPROGRAMS\ZGALAXY One"
   CreateShortcut "$SMPROGRAMS\ZGALAXY One\ZGALAXY One Control Panel.lnk" "$INSTDIR\zerotier_desktop_ui.exe" "" "$INSTDIR\zerotier-one.exe" 0
+  CreateShortcut "$DESKTOP\ZGALAXY One Control Panel.lnk" "$INSTDIR\zerotier_desktop_ui.exe" "" "$INSTDIR\zerotier-one.exe" 0
   CreateShortcut "$SMPROGRAMS\ZGALAXY One\ZGALAXY One CLI.lnk" "$SYSDIR\cmd.exe" '/k "$INSTDIR\zerotier-cli.exe" info' "$INSTDIR\zerotier-one.exe" 0
   CreateShortcut "$SMPROGRAMS\ZGALAXY One\Uninstall ZGALAXY One.lnk" "$INSTDIR\Uninstall.exe" "" "$INSTDIR\Uninstall.exe" 0
 
@@ -137,6 +149,14 @@ Section "Core Engine & Binaries (Required)" SecMain
   
   ; Configure Failure Recovery (Restart on crash)
   nsExec::ExecToLog 'sc failure "${SERVICE_NAME}" reset= 86400 actions= restart/5000/restart/5000/restart/5000'
+
+  ; 5. Grant ProgramData and authtoken.secret Read Permissions so Desktop UI Can Access Networks
+  DetailPrint "Configuring authentication token and data access permissions..."
+  SetShellVarContext all
+  nsExec::ExecToLog 'icacls "$APPDATA\ZeroTier\One" /grant "*S-1-5-32-545:(OI)(CI)(RX)" /grant "Users:(OI)(CI)(RX)" /grant "Everyone:(OI)(CI)(RX)" /t'
+  IfFileExists "$APPDATA\ZeroTier\One\authtoken.secret" 0 +2
+    nsExec::ExecToLog 'icacls "$APPDATA\ZeroTier\One\authtoken.secret" /grant "*S-1-5-32-545:(R)" /grant "Users:(R)" /grant "Everyone:(R)"'
+  SetShellVarContext current
 
   ; 5. Windows Firewall Rules
   DetailPrint "Configuring Windows Defender Firewall rules..."
@@ -198,6 +218,7 @@ Section "Uninstall"
   nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ZGALAXY One (Core Engine)"'
 
   DetailPrint "Deleting files and shortcuts..."
+  Delete "$DESKTOP\ZGALAXY One Control Panel.lnk"
   Delete "$SMPROGRAMS\ZGALAXY One\ZGALAXY One Control Panel.lnk"
   Delete "$SMPROGRAMS\ZGALAXY One\ZGALAXY One CLI.lnk"
   Delete "$SMPROGRAMS\ZGALAXY One\Uninstall ZGALAXY One.lnk"
@@ -210,6 +231,9 @@ Section "Uninstall"
   Delete "$INSTDIR\zgalaxy-one.exe"
   Delete "$INSTDIR\zgalaxy-cli.exe"
   Delete "$INSTDIR\zgalaxy_desktop_ui.exe"
+  Delete "$INSTDIR\zttap300.cat"
+  Delete "$INSTDIR\zttap300.inf"
+  Delete "$INSTDIR\zttap300.sys"
   Delete "$INSTDIR\driver\zttap300.cat"
   Delete "$INSTDIR\driver\zttap300.inf"
   Delete "$INSTDIR\driver\zttap300.sys"
