@@ -17,6 +17,28 @@
 
 namespace ZeroTier {
 
+/**
+ * True if an address is a private / LAN IPv4 (RFC1918, link-local or CGNAT).
+ * Used by setPlanetEndpoints() to keep local reachability intact while the
+ * resolved public endpoint is merged in.
+ */
+namespace {
+	inline bool _zgIsPrivateIPv4(const InetAddress& a)
+	{
+		if (! a.isV4()) {
+			return false;
+		}
+		const unsigned char* b = (const unsigned char*)a.rawIpData();
+		const unsigned int b0 = (unsigned int)b[0];
+		const unsigned int b1 = (unsigned int)b[1];
+		return ((b0 == 10) ||
+			((b0 == 172) && (b1 >= 16) && (b1 <= 31)) ||
+			((b0 == 192) && (b1 == 168)) ||
+			((b0 == 169) && (b1 == 254)) ||
+			((b0 == 100) && ((b1 & 0xC0) == 0x40)));
+	}
+}	// namespace
+
 /* ZGALAXY default world (planet). Generated from the ZGALAXY planet file
  * (zgalaxy/planet.bin, via mkmoonworld): world ID 149604618, root identity
  * 069ae38092, stable endpoints 192.168.1.171/9994, dz.dreamzone.cc/9994
@@ -359,6 +381,113 @@ bool Topology::addWorld(void* tPtr, const World& newWorld, bool alwaysAcceptNew)
 	_memoizeUpstreams(tPtr);
 
 	return true;
+}
+
+bool Topology::setPlanetEndpoints(void* tPtr, const std::vector<InetAddress>& eps)
+{
+	Mutex::Lock _l2(_peers_m);
+	Mutex::Lock _l1(_upstreams_m);
+
+	if ((! _planet) || (_planet.roots().empty())) {
+		return false;
+	}
+
+	// Only the PRIMARY root (index 0) is refreshed — it is the one the
+	// configured domain belongs to. Other roots (multi-root planets) keep
+	// their own endpoints untouched.
+
+	// Build the normalized endpoint list (IPv4 only): keep the existing
+	// private/LAN endpoints (so LAN peers keep working regardless of the
+	// resolved public address) and merge in the freshly resolved endpoint(s).
+	// If a resolved endpoint carries no port, reuse the current root port.
+	std::vector<InetAddress> newEps;
+	{
+		const std::vector<InetAddress>& curEps = _planet.roots()[0].stableEndpoints;
+		unsigned int rootPort = curEps.empty() ? 9994 : (unsigned int)curEps[0].port();
+
+		// Preserve existing private IPv4 endpoints.
+		for (std::vector<InetAddress>::const_iterator e(curEps.begin()); e != curEps.end(); ++e) {
+			if (e->isV4() && _zgIsPrivateIPv4(*e)) {
+				newEps.push_back(*e);
+			}
+		}
+
+		// Merge the resolved endpoint(s) (deduplicated by IP+port).
+		for (std::vector<InetAddress>::const_iterator e(eps.begin()); e != eps.end(); ++e) {
+			if (! e->isV4()) {
+				continue;
+			}
+			const InetAddress x = (e->port() > 0) ? *e : InetAddress(e->rawIpData(), 4, rootPort);
+			bool dup = false;
+			for (std::vector<InetAddress>::const_iterator n(newEps.begin()); n != newEps.end(); ++n) {
+				if ((n->ipsEqual(x)) && (n->port() == x.port())) {
+					dup = true;
+					break;
+				}
+			}
+			if (! dup) {
+				newEps.push_back(x);
+			}
+		}
+
+		if (newEps.empty()) {
+			return false;
+		}
+	}
+
+	// No-op if the primary root's endpoints are unchanged.
+	{
+		const std::vector<InetAddress>& cur0 = _planet.roots()[0].stableEndpoints;
+		bool same = (cur0.size() == newEps.size());
+		if (same) {
+			for (unsigned int k = 0; k < cur0.size(); ++k) {
+				if ((! cur0[k].ipsEqual(newEps[k])) || (cur0[k].port() != newEps[k].port())) {
+					same = false;
+					break;
+				}
+			}
+		}
+		if (same) {
+			return false;
+		}
+	}
+
+	// Apply to the primary root only.
+	_planet.setRootStableEndpoints(0, newEps);
+
+	// Persist the updated planet.
+	try {
+		Buffer<ZT_WORLD_MAX_SERIALIZED_LENGTH> sbuf;
+		_planet.serialize(sbuf, false);
+		uint64_t idtmp[2];
+		idtmp[0] = _planet.id();
+		idtmp[1] = 0;
+		RR->node->stateObjectPut(tPtr, ZT_STATE_OBJECT_PLANET, idtmp, sbuf.data(), sbuf.size());
+	}
+	catch (...) {
+	}
+
+	// Force a graceful re-link: drop the primary root's peer so the next
+	// background pass re-creates it and contacts the new endpoint (WHOIS/ping
+	// through getRootsToContact). No process restart.
+	_peers.erase(_planet.roots()[0].identity.address());
+
+	_memoizeUpstreams(tPtr);
+
+	return true;
+}
+
+bool Topology::isPlanetReachable(int64_t now)
+{
+	Mutex::Lock _l2(_peers_m);
+	Mutex::Lock _l1(_upstreams_m);
+	for (std::vector<Address>::const_iterator a(_upstreamAddresses.begin()); a != _upstreamAddresses.end(); ++a) {
+		const SharedPtr<Peer>* const p = _peers.get(*a);
+		if ((p) && ((*p)->hasAlivePath(now))) {
+			return true;
+		}
+	}
+	return false;
 }
 
 void Topology::addMoon(void* tPtr, const uint64_t id, const Address& seed)

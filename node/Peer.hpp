@@ -129,6 +129,32 @@ class Peer {
 	}
 
 	/**
+	 * Check whether this peer currently has at least one alive path
+	 *
+	 * A path is alive if it received a packet within ZT_PATH_HEARTBEAT_PERIOD
+	 * (+ a small margin). Used by the ZGALAXY dynamic-DNS layer to detect a
+	 * disconnected root.
+	 *
+	 * @param now Current time
+	 * @return True if at least one path is alive
+	 */
+	inline bool hasAlivePath(int64_t now) const
+	{
+		Mutex::Lock _l(_paths_m);
+		for (unsigned int i = 0; i < ZT_MAX_PEER_NETWORK_PATHS; ++i) {
+			if (_paths[i].p) {
+				if (_paths[i].p->alive(now)) {
+					return true;
+				}
+			}
+			else {
+				break;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Send via best direct path
 	 *
 	 * @param tPtr Thread pointer to be handed through to any callbacks called as a result of this call

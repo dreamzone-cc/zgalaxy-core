@@ -219,6 +219,33 @@ class Topology {
 	bool addWorld(void* tPtr, const World& newWorld, bool alwaysAcceptNew);
 
 	/**
+	 * Refresh the planet root(s) stable endpoint(s) from a resolved address
+	 *
+	 * Local-only, in-place update (no re-signing required — used by the native
+	 * dynamic-DNS layer). Replaces the stable endpoints of every planet root,
+	 * persists the planet and resets the root peer(s) so the client re-links to
+	 * the new endpoint on the next background pass. No-op (returns false) if the
+	 * endpoints are already up to date.
+	 *
+	 * @param tPtr Thread pointer to be handed through to any callbacks called as a result of this call
+	 * @param eps New stable endpoints (IPv4 only; empty means "no change")
+	 * @return True if the planet was changed
+	 */
+	bool setPlanetEndpoints(void* tPtr, const std::vector<InetAddress>& eps);
+
+	/**
+	 * Check whether the planet root(s) are currently reachable
+	 *
+	 * True if at least one upstream (root) peer has an alive path (receiving
+	 * heartbeats). Used by the ZGALAXY dynamic-DNS layer to detect a
+	 * disconnected root and trigger a re-resolution.
+	 *
+	 * @param now Current time
+	 * @return True if at least one root path is alive
+	 */
+	bool isPlanetReachable(int64_t now);
+
+	/**
 	 * Add a moon
 	 *
 	 * This loads it from moons.d if present, and if not adds it to

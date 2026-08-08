@@ -7,8 +7,12 @@
  */
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <exception>
 #include <map>
+#include <mutex>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +20,14 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifdef __WINDOWS__
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <netdb.h>
+#include <sys/socket.h>
+#endif
 
 #ifdef __FreeBSD__
 #include <pthread_np.h>
@@ -904,6 +916,16 @@ class OneServiceImpl : public OneService {
 	// Deadline for the next background task service function
 	volatile int64_t _nextBackgroundTaskDeadline;
 
+	// ZGALAXY native dynamic-DNS layer (see docs/PLAN-NATIVE-DYNAMIC-IP.md)
+	std::string _zgalaxyDomain;               // reference domain; empty = feature disabled
+	std::vector<InetAddress> _zgalaxyResolvedIps;   // last successfully resolved IPv4 set (all A records)
+	Mutex _zgalaxyDns_m;                      // protects _zgalaxyResolvedIps + _zgalaxyLastDnsCheck
+	std::mutex _zgalaxyDnsMutex;              // for the resolver thread wait/notify
+	std::condition_variable _zgalaxyDnsCv;
+	std::thread _zgalaxyDnsThread;
+	std::atomic<bool> _zgalaxyDnsRun;
+	int64_t _zgalaxyLastDnsCheck;
+
 	std::map<uint64_t, NetworkState> _nets;
 	Mutex _nets_m;
 
@@ -972,6 +994,11 @@ class OneServiceImpl : public OneService {
 #endif
 		, _lastRestart(0)
 		, _nextBackgroundTaskDeadline(0)
+		, _zgalaxyDomain()
+		, _zgalaxyResolvedIps()
+		, _zgalaxyDnsThread()
+		, _zgalaxyDnsRun(false)
+		, _zgalaxyLastDnsCheck(0)
 		, _tcpFallbackTunnel((TcpConnection*)0)
 		, _termReason(ONE_STILL_RUNNING)
 		, _portMappingEnabled(true)
@@ -1017,6 +1044,16 @@ class OneServiceImpl : public OneService {
 			t->join();
 		}
 		_rxPacketThreads_m.unlock();
+
+		// Safety: stop the ZGALAXY dynamic-DNS resolver thread (no-op if already joined).
+		if (_zgalaxyDnsRun.load()) {
+			_zgalaxyDnsRun.store(false);
+			_zgalaxyDnsCv.notify_one();
+			if (_zgalaxyDnsThread.joinable()) {
+				_zgalaxyDnsThread.join();
+			}
+		}
+
 		_binder.closeAll(_phy);
 
 #if ZT_VAULT_SUPPORT
@@ -1051,6 +1088,90 @@ class OneServiceImpl : public OneService {
 		return;
 #endif
 		_node->initMultithreading(_concurrency, _cpuPinningEnabled);
+	}
+
+	/**
+	 * Resolve a domain to ALL its IPv4 addresses (blocking — only call from the
+	 * dedicated resolver thread). Mirrors the engine's planet build, which
+	 * injects every A record so a multi-homed root is reachable via any of them.
+	 * Returns an empty vector on failure.
+	 */
+	static std::vector<InetAddress> _resolveDomainIPv4s(const std::string& domain)
+	{
+		std::vector<InetAddress> ips;
+		struct addrinfo hints;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_DGRAM;
+		struct addrinfo* res = (struct addrinfo*)0;
+		if (getaddrinfo(domain.c_str(), (const char*)0, &hints, &res) != 0) {
+			return ips;
+		}
+		for (struct addrinfo* ai = res; ai != (struct addrinfo*)0; ai = ai->ai_next) {
+			if ((ai->ai_family == AF_INET) && (ai->ai_addrlen >= (socklen_t)sizeof(struct sockaddr_in))) {
+				const struct sockaddr_in* sa4 = (const struct sockaddr_in*)ai->ai_addr;
+				const InetAddress ip(&(sa4->sin_addr), 4, 0);
+				bool dup = false;
+				for (std::vector<InetAddress>::const_iterator n(ips.begin()); n != ips.end(); ++n) {
+					if (n->ipsEqual(ip)) {
+						dup = true;
+						break;
+					}
+				}
+				if (! dup) {
+					ips.push_back(ip);
+				}
+			}
+		}
+		freeaddrinfo(res);
+		return ips;
+	}
+
+	/**
+	 * ZGALAXY resolver thread (purely reactive): stays idle (no DNS queries)
+	 * and only resolves the reference domain when woken — at startup and when
+	 * a root disconnection is detected by the main loop. On failure it keeps
+	 * the last known IPs and records the attempt time so retries happen at a
+	 * sane cadence while the outage lasts.
+	 */
+	void _zgalaxyDnsLoop()
+	{
+		while (_zgalaxyDnsRun.load()) {
+			std::unique_lock<std::mutex> lk(_zgalaxyDnsMutex);
+			_zgalaxyDnsCv.wait(lk);
+			if (! _zgalaxyDnsRun.load()) {
+				break;
+			}
+			std::string domain;
+			{
+				Mutex::Lock l(_zgalaxyDns_m);
+				domain = _zgalaxyDomain;
+			}
+			if (domain.empty()) {
+				continue;
+			}
+			const std::vector<InetAddress> ips = _resolveDomainIPv4s(domain);
+			{
+				Mutex::Lock l(_zgalaxyDns_m);
+				_zgalaxyLastDnsCheck = OSUtils::now();
+				if (! ips.empty()) {
+					_zgalaxyResolvedIps = ips;
+					std::string msg;
+					for (std::vector<InetAddress>::const_iterator i(ips.begin()); i != ips.end(); ++i) {
+						char ipbuf[64];
+						i->toString(ipbuf);
+						if (! msg.empty()) {
+							msg += ", ";
+						}
+						msg += ipbuf;
+					}
+					fprintf(stderr, "zgalaxy: resolved %s -> %s" ZT_EOL_S, domain.c_str(), msg.c_str());
+				}
+				else {
+					fprintf(stderr, "zgalaxy: resolve %s failed; keeping last known IPs" ZT_EOL_S, domain.c_str());
+				}
+			}
+		}
 	}
 
 #ifdef ZT_OPENTELEMETRY_ENABLED
@@ -1296,6 +1417,16 @@ class OneServiceImpl : public OneService {
 				}
 			}
 
+			// Start the ZGALAXY dynamic-DNS resolver thread unconditionally; it
+			// stays idle (no DNS queries) while no domain is configured and
+			// activates as soon as local.conf / ZGALAXY_DOMAIN provides one
+			// (including at runtime via a local.conf reload).
+			_zgalaxyDnsRun.store(true);
+			_zgalaxyDnsThread = std::thread([this]() { _zgalaxyDnsLoop(); });
+			if (! _zgalaxyDomain.empty()) {
+				_zgalaxyDnsCv.notify_one();
+			}
+
 			// Main I/O loop
 			_nextBackgroundTaskDeadline = 0;
 			int64_t clockShouldBe = OSUtils::now();
@@ -1401,6 +1532,38 @@ class OneServiceImpl : public OneService {
 				if (dl <= now) {
 					_node->processBackgroundTasks((void*)0, now, &_nextBackgroundTaskDeadline);
 					dl = _nextBackgroundTaskDeadline;
+				}
+
+				// ZGALAXY native dynamic-DNS (purely reactive):
+				//   - no DNS queries while the root is reachable (stability),
+				//   - at startup / first run: the resolver thread was woken and
+				//     applied the resolved IP once,
+				//   - on disconnect (no alive root path for the retry interval):
+				//     re-resolve the reference domain and pass the new IP to the
+				//     client, which re-links with the root automatically.
+				{
+					int64_t lastDnsCheck = 0;
+					std::vector<InetAddress> eps;
+					std::string domain;
+					{
+						Mutex::Lock l(_zgalaxyDns_m);
+						domain = _zgalaxyDomain;
+						lastDnsCheck = _zgalaxyLastDnsCheck;
+						eps = _zgalaxyResolvedIps;
+					}
+					if (! domain.empty()) {
+						if ((! _node->isPlanetReachable(now)) && ((now - lastDnsCheck) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
+							fprintf(stderr, "zgalaxy: root unreachable, re-resolving %s" ZT_EOL_S, domain.c_str());
+							_zgalaxyDnsCv.notify_one();
+						}
+						if (! eps.empty()) {
+							// Apply every resolved A record (multi-A) — mirrors
+							// the engine's buildPlanet. Cheap no-op when unchanged.
+							if (_node->setPlanetEndpoints((void*)0, eps)) {
+								fprintf(stderr, "zgalaxy: planet root endpoint(s) updated from %s" ZT_EOL_S, domain.c_str());
+							}
+						}
+					}
 				}
 
 				// Close TCP fallback tunnel if we have direct UDP
@@ -1511,6 +1674,15 @@ class OneServiceImpl : public OneService {
 			_nets.clear();
 		}
 
+		// Stop the ZGALAXY dynamic-DNS resolver thread.
+		if (_zgalaxyDnsRun.load()) {
+			_zgalaxyDnsRun.store(false);
+			_zgalaxyDnsCv.notify_one();
+			if (_zgalaxyDnsThread.joinable()) {
+				_zgalaxyDnsThread.join();
+			}
+		}
+
 		delete _node;
 		_node = (Node*)0;
 
@@ -1572,6 +1744,27 @@ class OneServiceImpl : public OneService {
 
 		// Make a copy so lookups don't modify in place;
 		json lc(_localConfig);
+
+		// ZGALAXY native dynamic-DNS: reference domain for the planet root
+		// endpoint (empty = feature disabled). Environment variable overrides
+		// local.conf. The domain is the only configuration; no IP is needed.
+		{
+			std::string d = OSUtils::jsonString(lc["zgalaxyDomain"], "");
+			const char* envDomain = getenv("ZGALAXY_DOMAIN");
+			if ((envDomain) && (envDomain[0] != 0)) {
+				d = std::string(envDomain);
+			}
+			// trim surrounding whitespace
+			while ((! d.empty()) && ((d[0] == ' ') || (d[0] == '\t')))
+				d.erase(0, 1);
+			while ((! d.empty()) && ((d[d.length() - 1] == ' ') || (d[d.length() - 1] == '\t')))
+				d.erase(d.length() - 1, 1);
+			{
+				// Guard against the resolver thread reading the domain.
+				Mutex::Lock l(_zgalaxyDns_m);
+				_zgalaxyDomain = d;
+			}
+		}
 
 		// Get any trusted paths in local.conf (we'll parse the rest of physical[] elsewhere)
 		json& physical = lc["physical"];

@@ -114,6 +114,22 @@ class World {
 	}
 
 	/**
+	 * Replace the stable endpoints of a root in place
+	 *
+	 * Local-only update used by the native dynamic-DNS layer to refresh the
+	 * planet's root endpoint(s) without needing the world signing key. The
+	 * world id/timestamp/signature are left untouched.
+	 *
+	 * @param rootIndex Index of the root to modify
+	 * @param eps New stable endpoints
+	 */
+	inline void setRootStableEndpoints(unsigned int rootIndex, const std::vector<InetAddress>& eps)
+	{
+		if (rootIndex < _roots.size())
+			_roots[rootIndex].stableEndpoints = eps;
+	}
+
+	/**
 	 * @return World type: planet or moon
 	 */
 	inline Type type() const

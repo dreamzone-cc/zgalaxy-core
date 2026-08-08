@@ -177,6 +177,27 @@ class Node : public NetworkController::Sender {
 	uint64_t prng();
 	ZT_ResultCode setPhysicalPathConfiguration(const struct sockaddr_storage* pathNetwork, const ZT_PhysicalPathConfiguration* pathConfig);
 
+	/**
+	 * Refresh the planet root(s) stable endpoint(s) from a resolved address
+	 *
+	 * Local-only in-place update (no re-signing) used by the native
+	 * dynamic-DNS layer. Resets the root peer(s) so the client re-links to the
+	 * new endpoint. No-op if the endpoints are already current.
+	 *
+	 * @param tPtr Thread pointer to be handed through to any callbacks called as a result of this call
+	 * @param eps New stable endpoints (IPv4 only)
+	 * @return True if the planet was changed
+	 */
+	bool setPlanetEndpoints(void* tPtr, const std::vector<InetAddress>& eps);
+
+	/**
+	 * Check whether the planet root(s) are currently reachable
+	 *
+	 * @param now Current time
+	 * @return True if at least one root path is alive
+	 */
+	bool isPlanetReachable(int64_t now);
+
 	World planet() const;
 	std::vector<World> moons() const;
 

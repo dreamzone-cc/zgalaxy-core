@@ -770,6 +770,16 @@ ZT_ResultCode Node::setPhysicalPathConfiguration(const struct sockaddr_storage* 
 	return ZT_RESULT_OK;
 }
 
+bool Node::setPlanetEndpoints(void* tPtr, const std::vector<InetAddress>& eps)
+{
+	return RR->topology->setPlanetEndpoints(tPtr, eps);
+}
+
+bool Node::isPlanetReachable(int64_t now)
+{
+	return RR->topology->isPlanetReachable(now);
+}
+
 World Node::planet() const
 {
 	return RR->topology->planet();

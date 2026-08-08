@@ -511,6 +511,16 @@
 #endif
 
 /**
+ * ZGALAXY native dynamic-DNS layer
+ *
+ * The client resolves the configured ZGALAXY domain at startup and re-resolves
+ * it only after the root becomes unreachable, to refresh the planet root
+ * endpoint(s). There is deliberately NO periodic polling: while the root is
+ * reachable the address is left untouched for stability.
+ */
+#define ZT_ZGALAXY_DNS_RETRY_INTERVAL 5000
+
+/**
  * General rate limit timeout for multiple packet types (HELLO, etc.)
  */
 #define ZT_PEER_GENERAL_INBOUND_RATE_LIMIT 500
