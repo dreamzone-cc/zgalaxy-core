@@ -119,23 +119,23 @@ install_binaries() {
   mkdir -p /var/lib/zerotier-one
 }
 
-# Permanent dynamic-IP resolver: keeps the client's planet in sync with the
-# ZGALAXY service (the engine rebuilds the planet whenever the public IP of
-# dz.dreamzone.cc changes). ZeroTier is IP-only, so this helper resolves the
-# domain's current IP and applies the latest planet, re-linking automatically.
+# Reactive dynamic-IP watchdog: runs continuously, and ONLY when the client
+# loses its connection to the ZGALAXY root does it resolve dz.dreamzone.cc,
+# fetch the updated planet (with the current IP) and re-link the client.
+# ZeroTier is IP-only, so this companion module performs the DNS resolution.
 install_planet_sync() {
   if [ ! -d /run/systemd/system ]; then
-    log "systemd not detected — skipping planet-sync timer (manual: $(command -v curl) -fsS -o /var/lib/zerotier-one/planet '${ZGALAXY_PLANET_URL:-http://dz.dreamzone.cc:3000/api/v1/planet/download}' && systemctl restart zerotier-one)"
+    log "systemd not detected — skipping watchdog (manual: run /usr/local/sbin/zgalaxy-watch.sh)"
     return 0
   fi
-  log "Installing planet-sync resolver (dynamic IP)..."
+  log "Installing connectivity watchdog (reactive dynamic IP)..."
   install -m 0755 "$SRC_DIR/client/zgalaxy-planet-sync.sh" /usr/local/sbin/zgalaxy-planet-sync.sh
-  install -m 0644 "$SRC_DIR/client/zgalaxy-planet-sync.service" /etc/systemd/system/zgalaxy-planet-sync.service
-  install -m 0644 "$SRC_DIR/client/zgalaxy-planet-sync.timer" /etc/systemd/system/zgalaxy-planet-sync.timer
+  install -m 0755 "$SRC_DIR/client/zgalaxy-watch.sh" /usr/local/sbin/zgalaxy-watch.sh
+  install -m 0644 "$SRC_DIR/client/zgalaxy-watch.service" /etc/systemd/system/zgalaxy-watch.service
   systemctl daemon-reload || true
-  systemctl enable --now zgalaxy-planet-sync.timer >/dev/null 2>&1 || true
-  # Apply the latest planet immediately.
-  /usr/local/sbin/zgalaxy-planet-sync.sh
+  systemctl enable --now zgalaxy-watch.service >/dev/null 2>&1 || true
+  # Apply the latest planet immediately (so the client connects on first boot).
+  /usr/local/sbin/zgalaxy-planet-sync.sh || true
 }
 
 install_service() {

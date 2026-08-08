@@ -1,0 +1,13 @@
+[Unit]
+Description=ZGALAXY One — connectivity watchdog (reacts to disconnection)
+After=network-online.target zerotier-one.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/zgalaxy-watch.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
