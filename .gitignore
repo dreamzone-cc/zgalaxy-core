@@ -47,7 +47,10 @@ lost+found
 /windows/*.opendb
 enc_temp_folder
 /windows/copyutil/bin
-/windows/copyutil/obj
+/windows/dist/
+*.lib
+/windows/*.lib
+/windows/*/*.lib
 .vs/
 
 # *nix/Mac build droppings
