@@ -75,7 +75,40 @@ planet — with the live ZGALAXY IP — must be supplied at run time.
 
 - On first run the client writes the (empty) default world and is offline until
   a real `planet` file is placed in `%ProgramData%\ZeroTier\One\`.
-- The Linux companion watchdog (`client/zgalaxy-watch.sh`) is systemd-based; a
-  Windows equivalent (Task Scheduler or a small service that copies the planet
-  from the ZGALAXY engine and restarts the service on disconnect) is planned
-  for the Windows release.
+- The Windows companion watchdog (Windows equivalent of the systemd
+  `client/zgalaxy-watch.service` + `zgalaxy-planet-sync.sh`) lives in
+  `windows\watchdog\` — see below.
+
+## Windows watchdog (dynamic-IP companion)
+
+The ZGALAXY domain (`dz.dreamzone.cc`) changes IP over time, and ZeroTier is
+IP-only (hostnames are dropped from the planet). The Windows client therefore
+ships with the same **reactive** companion as Linux: it does nothing while the
+client is connected, and only re-links when the connection is lost.
+
+- `windows\watchdog\ZGALAXY-Planet-Sync.ps1` — the action (one-shot): checks
+  `zerotier-cli listpeers` for the root `069ae38092`; if still connected it
+  exits immediately. On disconnect it resolves `dz.dreamzone.cc`, fetches the
+  latest planet from the ZGALAXY engine, applies it to
+  `%ProgramData%\ZeroTier\One\planet` and restarts the `ZeroTierOneService`
+  (including a stopped one).
+- `windows\watchdog\install-watchdog.ps1` — registers the **ZGALAXY One
+  Watchdog** scheduled task (runs every 1 minute as SYSTEM, restarts on
+  failure).
+
+Install it on the target machine (admin PowerShell, after installing the
+client):
+
+```powershell
+cd "C:\Program Files\ZGALAXY One"
+# copy windows\watchdog\* into the install dir first, then:
+powershell -ExecutionPolicy Bypass -File install-watchdog.ps1
+```
+
+Tune via environment variables (defaults shown):
+`ZGALAXY_DOMAIN=dz.dreamzone.cc`, `ZGALAXY_ROOT_ID=069ae38092`,
+`ZGALAXY_PLANET_URL=http://dz.dreamzone.cc:3000/api/v1/planet/download`,
+`ZGALAXY_DATA_DIR=%ProgramData%\ZeroTier\One`,
+`ZGALAXY_SERVICE_NAME=ZeroTierOneService`.
+
+Activity is logged to `%ProgramData%\ZeroTier\One\zgalaxy-watch.log`.
