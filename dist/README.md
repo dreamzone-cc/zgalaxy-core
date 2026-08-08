@@ -3,6 +3,12 @@
 Ready-to-run ZGALAXY One binaries (ZeroTier 1.16.2 fork wired exclusively to
 the ZGALAXY private planet). No build required — download, install, join.
 
+> **IP-agnostic:** these binaries ship WITHOUT any embedded IP address. The
+> ZGALAXY planet (with the current live IP) is supplied at run time by the
+> companion module `client/zgalaxy-planet-sync.sh` (installed by `install.sh`),
+> which resolves `dz.dreamzone.cc` and keeps the planet updated — so the client
+> never needs rebuilding when the service's public IP changes.
+
 | File | Platform | Built on | Runtime requirements |
 |------|----------|----------|----------------------|
 | `zgalaxy-one-linux-x86_64-ubuntu26` | Linux x86_64 | Ubuntu 26.04 | glibc ≥ 2.42 (Ubuntu 26.04+) · `libminiupnpc21` · `libnatpmp1` · `libssl3` |
