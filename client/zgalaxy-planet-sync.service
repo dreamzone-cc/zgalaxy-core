@@ -1,0 +1,8 @@
+[Unit]
+Description=ZGALAXY One — planet sync (dynamic IP resolver)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zgalaxy-planet-sync.sh

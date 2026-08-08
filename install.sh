@@ -119,6 +119,25 @@ install_binaries() {
   mkdir -p /var/lib/zerotier-one
 }
 
+# Permanent dynamic-IP resolver: keeps the client's planet in sync with the
+# ZGALAXY service (the engine rebuilds the planet whenever the public IP of
+# dz.dreamzone.cc changes). ZeroTier is IP-only, so this helper resolves the
+# domain's current IP and applies the latest planet, re-linking automatically.
+install_planet_sync() {
+  if [ ! -d /run/systemd/system ]; then
+    log "systemd not detected — skipping planet-sync timer (manual: $(command -v curl) -fsS -o /var/lib/zerotier-one/planet '${ZGALAXY_PLANET_URL:-http://dz.dreamzone.cc:3000/api/v1/planet/download}' && systemctl restart zerotier-one)"
+    return 0
+  fi
+  log "Installing planet-sync resolver (dynamic IP)..."
+  install -m 0755 "$SRC_DIR/client/zgalaxy-planet-sync.sh" /usr/local/sbin/zgalaxy-planet-sync.sh
+  install -m 0644 "$SRC_DIR/client/zgalaxy-planet-sync.service" /etc/systemd/system/zgalaxy-planet-sync.service
+  install -m 0644 "$SRC_DIR/client/zgalaxy-planet-sync.timer" /etc/systemd/system/zgalaxy-planet-sync.timer
+  systemctl daemon-reload || true
+  systemctl enable --now zgalaxy-planet-sync.timer >/dev/null 2>&1 || true
+  # Apply the latest planet immediately.
+  /usr/local/sbin/zgalaxy-planet-sync.sh
+}
+
 install_service() {
   if [ ! -d /run/systemd/system ]; then
     log "systemd not detected — skipping service registration (start manually: $ZT_BIN -d -p$PORT)"
@@ -164,6 +183,7 @@ install_deps "$OS"
 ensure_rust
 build
 install_binaries
+install_planet_sync
 install_service
 
 if [ -d /run/systemd/system ]; then
