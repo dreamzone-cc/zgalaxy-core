@@ -193,3 +193,43 @@ journalctl -u zerotier-one | grep zgalaxy
 | `node/Constants.hpp` | +10 | `ZT_ZGALAXY_DNS_RETRY_INTERVAL` |
 | `service/OneService.cpp` | +~165 | config, resolver thread, reactive loop, lifecycle |
 | `docs/*.md` | new | 3 analysis/plan docs |
+
+---
+
+## 8. Full planet/moon independence & domain-based connectivity (v2)
+
+The client is now **fully independent** of any specific planet/moon set — worlds
+are external, swappable files, and the domain-name mechanism covers **both
+planets and moons**:
+
+### 8.1 Auto-import from ZGALAXY (no manual file handling)
+- Config `"zgalaxyEngineUrl"` (e.g. `http://dz.dreamzone.cc:3000`). At startup
+  the client downloads the current `planet` (`GET /api/v1/planet/download`) and
+  every configured moon (`GET /api/v1/moons/<id>.moon/download`) using the
+  engine's public endpoints, and writes them into the home directory before the
+  node starts. Worlds update automatically; no recompilation, no manual
+  intervention.
+
+### 8.2 Reactive domain resolution for planets AND moons
+- Config `"zgalaxyMoons": [{ "id": "<16-hex world id>", "domain": "…" }]`.
+- The resolver thread resolves the planet domain and every moon domain (all A
+  records). `Topology::setMoonEndpoints` merges private/LAN + resolved
+  endpoints into the moon's root in place, persists the moon, and re-links its
+  root peer. Disconnect fallback is per-world (`Topology::isWorldReachable`).
+
+### 8.3 Bounded validation (address verification)
+- Config `"zgalaxyValidateIntervalMinutes"` (default 10; 0 = pure reactive).
+  At the configured cadence the client re-resolves all worlds and applies
+  changes (no-op when unchanged) — deliberate and gentle to avoid excessive DNS
+  load. The disconnect fallback re-resolves immediately when needed.
+
+### 8.4 Runtime moons.d watcher (no restart)
+- The client scans `moons.d` every 10 s and **orbits newly added** `.moon`
+  files and **deorbits removed** ones — planets/moons can be dropped in or
+  taken out without restarting.
+
+### 8.5 Independence guarantees
+- No baked world; planet/moon files fully external.
+- One planet + any number of moons (ZeroTier's model).
+- Adding/removing/swapping moons = placing/removing `.moon` files in `moons.d`
+  (auto-detected) or configuring `zgalaxyMoons` + restart for auto-import.
