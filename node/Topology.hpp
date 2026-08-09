@@ -246,6 +246,31 @@ class Topology {
 	bool isPlanetReachable(int64_t now);
 
 	/**
+	 * Refresh a MOON root's stable endpoint(s) from resolved address(es).
+	 *
+	 * Local-only in-place update (no re-signing) used by the native
+	 * dynamic-DNS layer. Merges private/LAN endpoints with the resolved public
+	 * endpoint(s), persists the moon and resets the moon's root peer so it
+	 * re-links to the new endpoint. No-op if unchanged.
+	 *
+	 * @param tPtr Thread pointer to be handed through to any callbacks called as a result of this call
+	 * @param worldId Moon world id (16-hex)
+	 * @param eps New stable endpoints (IPv4 only)
+	 * @return True if the moon was changed
+	 */
+	bool setMoonEndpoints(void* tPtr, uint64_t worldId, const std::vector<InetAddress>& eps);
+
+	/**
+	 * Check whether a specific world (the planet or a moon) is currently
+	 * reachable — true if any of its roots has an alive path.
+	 *
+	 * @param worldId World id (the planet's id, or a moon's id)
+	 * @param now Current time
+	 * @return True if the world's root path is alive
+	 */
+	bool isWorldReachable(uint64_t worldId, int64_t now);
+
+	/**
 	 * Add a moon
 	 *
 	 * This loads it from moons.d if present, and if not adds it to

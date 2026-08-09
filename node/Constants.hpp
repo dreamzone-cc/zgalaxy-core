@@ -521,6 +521,15 @@
 #define ZT_ZGALAXY_DNS_RETRY_INTERVAL 5000
 
 /**
+ * Default bounded validation interval for the ZGALAXY dynamic-DNS layer.
+ * When enabled (config "zgalaxyValidateIntervalMinutes"), the client
+ * re-resolves the configured planet/moon domains at this cadence and applies
+ * changes — deliberately gentle to avoid excessive DNS load. 0 disables it
+ * (pure reactive behaviour).
+ */
+#define ZT_ZGALAXY_VALIDATE_INTERVAL 600000
+
+/**
  * General rate limit timeout for multiple packet types (HELLO, etc.)
  */
 #define ZT_PEER_GENERAL_INBOUND_RATE_LIMIT 500

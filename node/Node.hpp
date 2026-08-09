@@ -191,12 +191,31 @@ class Node : public NetworkController::Sender {
 	bool setPlanetEndpoints(void* tPtr, const std::vector<InetAddress>& eps);
 
 	/**
+	 * Refresh a MOON root's stable endpoint(s) from resolved address(es)
+	 *
+	 * @param tPtr Thread pointer to be handed through to any callbacks called as a result of this call
+	 * @param worldId Moon world id (16-hex)
+	 * @param eps New stable endpoints (IPv4 only)
+	 * @return True if the moon was changed
+	 */
+	bool setMoonEndpoints(void* tPtr, uint64_t worldId, const std::vector<InetAddress>& eps);
+
+	/**
 	 * Check whether the planet root(s) are currently reachable
 	 *
 	 * @param now Current time
 	 * @return True if at least one root path is alive
 	 */
 	bool isPlanetReachable(int64_t now);
+
+	/**
+	 * Check whether a specific world (planet or moon) is currently reachable
+	 *
+	 * @param worldId World id (planet id or a moon id)
+	 * @param now Current time
+	 * @return True if the world's root path is alive
+	 */
+	bool isWorldReachable(uint64_t worldId, int64_t now);
 
 	World planet() const;
 	std::vector<World> moons() const;

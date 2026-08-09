@@ -775,9 +775,19 @@ bool Node::setPlanetEndpoints(void* tPtr, const std::vector<InetAddress>& eps)
 	return RR->topology->setPlanetEndpoints(tPtr, eps);
 }
 
+bool Node::setMoonEndpoints(void* tPtr, uint64_t worldId, const std::vector<InetAddress>& eps)
+{
+	return RR->topology->setMoonEndpoints(tPtr, worldId, eps);
+}
+
 bool Node::isPlanetReachable(int64_t now)
 {
 	return RR->topology->isPlanetReachable(now);
+}
+
+bool Node::isWorldReachable(uint64_t worldId, int64_t now)
+{
+	return RR->topology->isWorldReachable(worldId, now);
 }
 
 World Node::planet() const

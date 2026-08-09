@@ -13,6 +13,8 @@
 #include <exception>
 #include <map>
 #include <mutex>
+#include <regex>
+#include <set>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -916,10 +918,21 @@ class OneServiceImpl : public OneService {
 	// Deadline for the next background task service function
 	volatile int64_t _nextBackgroundTaskDeadline;
 
-	// ZGALAXY native dynamic-DNS layer (see docs/PLAN-NATIVE-DYNAMIC-IP.md)
-	std::string _zgalaxyDomain;               // reference domain; empty = feature disabled
-	std::vector<InetAddress> _zgalaxyResolvedIps;   // last successfully resolved IPv4 set (all A records)
-	Mutex _zgalaxyDns_m;                      // protects _zgalaxyResolvedIps + _zgalaxyLastDnsCheck
+	// ZGALAXY native dynamic-DNS layer (see docs/DYNAMIC-IP-IMPLEMENTATION.md)
+	std::string _zgalaxyDomain;               // reference planet domain; empty = feature disabled
+	std::vector<InetAddress> _zgalaxyResolvedIps;   // planet: last successfully resolved IPv4 set (all A records)
+	struct ZgMoon {
+		uint64_t worldId;
+		std::string domain;
+		std::vector<InetAddress> resolvedIps;
+		int64_t lastResolved;
+	};
+	std::vector<ZgMoon> _zgalaxyMoons;        // configured moons (id + domain)
+	std::string _zgalaxyEngineUrl;            // ZGALAXY engine base URL for auto-import ("" = disabled)
+	int64_t _zgalaxyValidateInterval;         // bounded validation cadence (ms); 0 = disabled (pure reactive)
+	int64_t _lastZgalaxyValidate;             // last bounded-validation timestamp
+	std::set<uint64_t> _zgalaxyKnownMoons;    // moons.d scan: moon ids we already orbited
+	Mutex _zgalaxyDns_m;                      // protects the above DNS state
 	std::mutex _zgalaxyDnsMutex;              // for the resolver thread wait/notify
 	std::condition_variable _zgalaxyDnsCv;
 	std::thread _zgalaxyDnsThread;
@@ -996,6 +1009,11 @@ class OneServiceImpl : public OneService {
 		, _nextBackgroundTaskDeadline(0)
 		, _zgalaxyDomain()
 		, _zgalaxyResolvedIps()
+		, _zgalaxyMoons()
+		, _zgalaxyEngineUrl()
+		, _zgalaxyValidateInterval(0)
+		, _lastZgalaxyValidate(0)
+		, _zgalaxyKnownMoons()
 		, _zgalaxyDnsThread()
 		, _zgalaxyDnsRun(false)
 		, _zgalaxyLastDnsCheck(0)
@@ -1128,11 +1146,131 @@ class OneServiceImpl : public OneService {
 	}
 
 	/**
-	 * ZGALAXY resolver thread (purely reactive): stays idle (no DNS queries)
-	 * and only resolves the reference domain when woken — at startup and when
-	 * a root disconnection is detected by the main loop. On failure it keeps
-	 * the last known IPs and records the attempt time so retries happen at a
-	 * sane cadence while the outage lasts.
+	 * Auto-import the planet and configured moons from the ZGALAXY engine at
+	 * startup (public download endpoints only — no credentials needed). Writes
+	 * them into the client's home directory so the node loads the current
+	 * signed worlds without manual intervention or recompilation.
+	 */
+	void _zgalaxyImportFromEngine()
+	{
+		std::string engineUrl;
+		std::vector<ZgMoon> moons;
+		{
+			Mutex::Lock l(_zgalaxyDns_m);
+			engineUrl = _zgalaxyEngineUrl;
+			moons = _zgalaxyMoons;
+		}
+		if (engineUrl.empty()) {
+			return;
+		}
+
+		httplib::Client cli(engineUrl.c_str());
+		cli.set_connection_timeout(5, 0);
+		cli.set_read_timeout(20, 0);
+
+		// Planet
+		{
+			auto res = cli.Get("/api/v1/planet/download");
+			if (res && (res->status == 200)) {
+				const std::string dest = _homePath + ZT_PATH_SEPARATOR_S "planet";
+				if (OSUtils::writeFile(dest.c_str(), res->body)) {
+					fprintf(stderr, "zgalaxy: imported planet from %s (%zu bytes)" ZT_EOL_S, engineUrl.c_str(), res->body.size());
+				}
+				else {
+					fprintf(stderr, "zgalaxy: failed to write imported planet" ZT_EOL_S);
+				}
+			}
+			else {
+				fprintf(stderr, "zgalaxy: planet import failed (HTTP %d)" ZT_EOL_S, (res ? res->status : -1));
+			}
+		}
+
+		// Moons
+		{
+			const std::string moonsDir = _homePath + ZT_PATH_SEPARATOR_S "moons.d";
+			OSUtils::mkdir(moonsDir);
+			for (std::vector<ZgMoon>::const_iterator m(moons.begin()); m != moons.end(); ++m) {
+				char wid[17];
+				Utils::hex(m->worldId, wid);
+				const std::string url = std::string("/api/v1/moons/") + wid + ".moon/download";
+				auto res = cli.Get(url.c_str());
+				if (res && (res->status == 200)) {
+					const std::string dest = moonsDir + ZT_PATH_SEPARATOR_S + wid + ".moon";
+					if (OSUtils::writeFile(dest.c_str(), res->body)) {
+						fprintf(stderr, "zgalaxy: imported moon %s from %s (%zu bytes)" ZT_EOL_S, wid, engineUrl.c_str(), res->body.size());
+					}
+				}
+				else {
+					fprintf(stderr, "zgalaxy: moon %s import failed (HTTP %d)" ZT_EOL_S, wid, (res ? res->status : -1));
+				}
+			}
+		}
+	}
+
+	/**
+	 * Runtime moons.d watcher: orbit newly added .moon files and deorbit ones
+	 * whose file was removed — no restart required.
+	 */
+	void _zgalaxyScanMoonsD()
+	{
+		Mutex::Lock l(_zgalaxyDns_m);
+		const std::string moonsDir = _homePath + ZT_PATH_SEPARATOR_S "moons.d";
+
+		std::set<uint64_t> present;
+		{
+			std::vector<std::string> files(OSUtils::listDirectory(moonsDir.c_str()));
+			fprintf(stderr, "zgalaxy: moons.d scan (%zu files)" ZT_EOL_S, files.size());
+			for (std::vector<std::string>::iterator f(files.begin()); f != files.end(); ++f) {
+				std::size_t dot = f->find_last_of('.');
+				if ((dot == 16) && (f->substr(16) == ".moon")) {
+					const std::string hex = f->substr(0, 16);
+					bool isHex = true;
+					for (std::size_t i = 0; i < hex.size(); ++i) {
+						if (! isxdigit((unsigned char)hex[i])) {
+							isHex = false;
+							break;
+						}
+					}
+					if (isHex) {
+						present.insert(Utils::hexStrToU64(hex.c_str()));
+					}
+				}
+			}
+		}
+
+		// Orbit newly added moons.
+		for (std::set<uint64_t>::const_iterator id(present.begin()); id != present.end(); ++id) {
+			if (_zgalaxyKnownMoons.find(*id) == _zgalaxyKnownMoons.end()) {
+				_zgalaxyKnownMoons.insert(*id);
+				_node->orbit((void*)0, *id, (uint64_t)0);
+				char wid[17];
+				Utils::hex(*id, wid);
+				fprintf(stderr, "zgalaxy: moons.d detected moon %s" ZT_EOL_S, wid);
+			}
+		}
+
+		// Deorbit moons whose file was removed.
+		for (std::set<uint64_t>::iterator k(_zgalaxyKnownMoons.begin()); k != _zgalaxyKnownMoons.end();) {
+			if (present.find(*k) == present.end()) {
+				_node->deorbit((void*)0, *k);
+				char wid[17];
+				Utils::hex(*k, wid);
+				fprintf(stderr, "zgalaxy: moons.d moon %s removed; deorbited" ZT_EOL_S, wid);
+				_zgalaxyKnownMoons.erase(k++);
+			}
+			else {
+				++k;
+			}
+		}
+	}
+
+	/**
+	 * ZGALAXY resolver thread (purely reactive + bounded validation): stays
+	 * idle (no DNS queries) and only resolves when woken — at startup, on a
+	 * detected disconnect (fallback), or on the bounded validation interval.
+	 * Resolves the planet domain and every configured moon domain (all A
+	 * records). On failure it keeps the last known IPs and records the attempt
+	 * time so retries happen at a sane cadence while an outage lasts.
 	 */
 	void _zgalaxyDnsLoop()
 	{
@@ -1142,33 +1280,65 @@ class OneServiceImpl : public OneService {
 			if (! _zgalaxyDnsRun.load()) {
 				break;
 			}
-			std::string domain;
+			std::string planetDomain;
+			std::vector<ZgMoon> moons;
 			{
 				Mutex::Lock l(_zgalaxyDns_m);
-				domain = _zgalaxyDomain;
+				planetDomain = _zgalaxyDomain;
+				moons = _zgalaxyMoons;
 			}
-			if (domain.empty()) {
-				continue;
-			}
-			const std::vector<InetAddress> ips = _resolveDomainIPv4s(domain);
-			{
+			const int64_t attempt = OSUtils::now();
+
+			// Planet
+			if (! planetDomain.empty()) {
+				const std::vector<InetAddress> ips = _resolveDomainIPv4s(planetDomain);
 				Mutex::Lock l(_zgalaxyDns_m);
-				_zgalaxyLastDnsCheck = OSUtils::now();
+				_zgalaxyLastDnsCheck = attempt;
 				if (! ips.empty()) {
 					_zgalaxyResolvedIps = ips;
 					std::string msg;
 					for (std::vector<InetAddress>::const_iterator i(ips.begin()); i != ips.end(); ++i) {
 						char ipbuf[64];
 						i->toString(ipbuf);
-						if (! msg.empty()) {
-							msg += ", ";
-						}
+						if (! msg.empty()) msg += ", ";
 						msg += ipbuf;
 					}
-					fprintf(stderr, "zgalaxy: resolved %s -> %s" ZT_EOL_S, domain.c_str(), msg.c_str());
+					fprintf(stderr, "zgalaxy: resolved planet %s -> %s" ZT_EOL_S, planetDomain.c_str(), msg.c_str());
 				}
 				else {
-					fprintf(stderr, "zgalaxy: resolve %s failed; keeping last known IPs" ZT_EOL_S, domain.c_str());
+					fprintf(stderr, "zgalaxy: resolve planet %s failed; keeping last known IPs" ZT_EOL_S, planetDomain.c_str());
+				}
+			}
+
+			// Moons
+			for (std::vector<ZgMoon>::const_iterator m(moons.begin()); m != moons.end(); ++m) {
+				const std::vector<InetAddress> ips = _resolveDomainIPv4s(m->domain);
+				Mutex::Lock l(_zgalaxyDns_m);
+				for (std::vector<ZgMoon>::iterator mm(_zgalaxyMoons.begin()); mm != _zgalaxyMoons.end(); ++mm) {
+					if (mm->worldId == m->worldId) {
+						mm->lastResolved = attempt;
+						if (! ips.empty()) {
+							mm->resolvedIps = ips;
+						}
+						break;
+					}
+				}
+				if (! ips.empty()) {
+					std::string msg;
+					for (std::vector<InetAddress>::const_iterator i(ips.begin()); i != ips.end(); ++i) {
+						char ipbuf[64];
+						i->toString(ipbuf);
+						if (! msg.empty()) msg += ", ";
+						msg += ipbuf;
+					}
+					char wid[17];
+					Utils::hex(m->worldId, wid);
+					fprintf(stderr, "zgalaxy: resolved moon %s (%s) -> %s" ZT_EOL_S, wid, m->domain.c_str(), msg.c_str());
+				}
+				else {
+					char wid[17];
+					Utils::hex(m->worldId, wid);
+					fprintf(stderr, "zgalaxy: resolve moon %s (%s) failed; keeping last known IPs" ZT_EOL_S, wid, m->domain.c_str());
 				}
 			}
 		}
@@ -1291,6 +1461,11 @@ class OneServiceImpl : public OneService {
 				struct ZT_Node_Config config;
 				config.enableEncryptedHello = 0;
 				config.lowBandwidthMode = 0;
+				// Parse local.conf BEFORE importing so zgalaxyEngineUrl /
+				// zgalaxyMoons are available, and so the node loads the freshly
+				// imported planet/moons at construction.
+				readLocalSettings();
+				this->_zgalaxyImportFromEngine();
 				_node = new Node(this, (void*)0, &config, &cb, OSUtils::now());
 			}
 
@@ -1417,6 +1592,16 @@ class OneServiceImpl : public OneService {
 				}
 			}
 
+			// Seed the moons.d watcher with the currently-loaded moons so it
+			// only reacts to NEW .moon files (added/removed at runtime).
+			{
+				Mutex::Lock l(_zgalaxyDns_m);
+				std::vector<World> cur(_node->moons());
+				for (std::vector<World>::const_iterator w(cur.begin()); w != cur.end(); ++w) {
+					_zgalaxyKnownMoons.insert(w->id());
+				}
+			}
+
 			// Start the ZGALAXY dynamic-DNS resolver thread unconditionally; it
 			// stays idle (no DNS queries) while no domain is configured and
 			// activates as soon as local.conf / ZGALAXY_DOMAIN provides one
@@ -1436,6 +1621,7 @@ class OneServiceImpl : public OneService {
 			int64_t lastCleanedPeersDb = 0;
 			int64_t lastLocalConfFileCheck = OSUtils::now();
 			int64_t lastOnline = lastLocalConfFileCheck;
+			int64_t lastZgalaxyMoonsScan = OSUtils::now();
 
 			for (;;) {
 				_run_m.lock();
@@ -1470,6 +1656,12 @@ class OneServiceImpl : public OneService {
 							applyLocalConfig();
 						}
 					}
+				}
+
+				// Scan moons.d for added/removed .moon files (runtime, no restart).
+				if ((now - lastZgalaxyMoonsScan) >= 10000) {
+					lastZgalaxyMoonsScan = now;
+					_zgalaxyScanMoonsD();
 				}
 
 				// Refresh bindings in case device's interfaces have changed, and also sync routes to update any shadow routes (e.g. shadow default)
@@ -1534,33 +1726,78 @@ class OneServiceImpl : public OneService {
 					dl = _nextBackgroundTaskDeadline;
 				}
 
-				// ZGALAXY native dynamic-DNS (purely reactive):
-				//   - no DNS queries while the root is reachable (stability),
-				//   - at startup / first run: the resolver thread was woken and
-				//     applied the resolved IP once,
-				//   - on disconnect (no alive root path for the retry interval):
-				//     re-resolve the reference domain and pass the new IP to the
-				//     client, which re-links with the root automatically.
+				// ZGALAXY native dynamic-DNS (reactive + bounded validation):
+				//   - no DNS queries while the worlds are reachable,
+				//   - startup / first run: the resolver thread resolves once,
+				//   - disconnect fallback: re-resolve the affected world,
+				//   - optional bounded validation at zgalaxyValidateIntervalMinutes.
+				// Applies planet AND configured moon endpoints (multi-A merge).
 				{
 					int64_t lastDnsCheck = 0;
-					std::vector<InetAddress> eps;
-					std::string domain;
+					std::string planetDomain;
+					std::vector<InetAddress> planetEps;
+					std::vector<std::pair<uint64_t, std::vector<InetAddress> > > moonEps;
+					std::vector<int64_t> moonLastResolved;
 					{
 						Mutex::Lock l(_zgalaxyDns_m);
-						domain = _zgalaxyDomain;
+						planetDomain = _zgalaxyDomain;
 						lastDnsCheck = _zgalaxyLastDnsCheck;
-						eps = _zgalaxyResolvedIps;
+						planetEps = _zgalaxyResolvedIps;
+						moonEps.clear();
+						moonLastResolved.clear();
+						for (std::vector<ZgMoon>::const_iterator m(_zgalaxyMoons.begin()); m != _zgalaxyMoons.end(); ++m) {
+							moonEps.push_back(std::make_pair(m->worldId, m->resolvedIps));
+							moonLastResolved.push_back(m->lastResolved);
+						}
 					}
-					if (! domain.empty()) {
-						if ((! _node->isPlanetReachable(now)) && ((now - lastDnsCheck) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
-							fprintf(stderr, "zgalaxy: root unreachable, re-resolving %s" ZT_EOL_S, domain.c_str());
+
+					if (! planetDomain.empty() || ! moonEps.empty()) {
+						bool wantResolve = false;
+
+						// Bounded validation cadence (avoids excessive polling).
+						{
+							Mutex::Lock l(_zgalaxyDns_m);
+							if ((_zgalaxyValidateInterval > 0) && ((now - _lastZgalaxyValidate) >= _zgalaxyValidateInterval)) {
+								_lastZgalaxyValidate = now;
+								wantResolve = true;
+							}
+						}
+
+						// Planet disconnect fallback.
+						if (! planetDomain.empty()) {
+							const uint64_t pid = _node->planet().id();
+							if ((! _node->isWorldReachable(pid, now)) && ((now - lastDnsCheck) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
+								fprintf(stderr, "zgalaxy: planet unreachable, re-resolving %s" ZT_EOL_S, planetDomain.c_str());
+								wantResolve = true;
+							}
+						}
+
+						// Moon disconnect fallback (per-moon retry gate).
+						for (std::size_t i = 0; i < moonEps.size(); ++i) {
+							if ((! _node->isWorldReachable(moonEps[i].first, now)) && ((now - moonLastResolved[i]) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
+								wantResolve = true;
+							}
+						}
+
+						if (wantResolve) {
 							_zgalaxyDnsCv.notify_one();
 						}
-						if (! eps.empty()) {
-							// Apply every resolved A record (multi-A) — mirrors
-							// the engine's buildPlanet. Cheap no-op when unchanged.
-							if (_node->setPlanetEndpoints((void*)0, eps)) {
-								fprintf(stderr, "zgalaxy: planet root endpoint(s) updated from %s" ZT_EOL_S, domain.c_str());
+
+						// Apply planet endpoints (cheap no-op when unchanged).
+						if ((! planetDomain.empty()) && (! planetEps.empty())) {
+							if (_node->setPlanetEndpoints((void*)0, planetEps)) {
+								fprintf(stderr, "zgalaxy: planet root endpoint(s) updated from %s" ZT_EOL_S, planetDomain.c_str());
+							}
+						}
+
+						// Apply moon endpoints.
+						for (std::size_t i = 0; i < moonEps.size(); ++i) {
+							if (! moonEps[i].second.empty()) {
+								if (_node->setMoonEndpoints((void*)0, moonEps[i].first, moonEps[i].second)) {
+									char wid[17];
+									Utils::hex(moonEps[i].first, wid);
+									fprintf(stderr, "zgalaxy: moon %s endpoint(s) updated" ZT_EOL_S, wid);
+								}
 							}
 						}
 					}
@@ -1745,9 +1982,9 @@ class OneServiceImpl : public OneService {
 		// Make a copy so lookups don't modify in place;
 		json lc(_localConfig);
 
-		// ZGALAXY native dynamic-DNS: reference domain for the planet root
-		// endpoint (empty = feature disabled). Environment variable overrides
-		// local.conf. The domain is the only configuration; no IP is needed.
+		// ZGALAXY native dynamic-DNS: reference planet domain (empty = feature
+		// disabled). Environment variable overrides local.conf. The domain is
+		// the only configuration for the planet; no IP is needed.
 		{
 			std::string d = OSUtils::jsonString(lc["zgalaxyDomain"], "");
 			const char* envDomain = getenv("ZGALAXY_DOMAIN");
@@ -1764,6 +2001,53 @@ class OneServiceImpl : public OneService {
 				Mutex::Lock l(_zgalaxyDns_m);
 				_zgalaxyDomain = d;
 			}
+		}
+
+		// ZGALAXY moons: [{ "id": "<16-hex world id>", "domain": "..." }, ...].
+		// Each moon's domain is resolved reactively just like the planet domain.
+		{
+			std::vector<ZgMoon> moons;
+			const json& mj = lc["zgalaxyMoons"];
+			if (mj.is_array()) {
+				for (const json& m : mj) {
+					if (! m.is_object()) {
+						continue;
+					}
+					std::string idStr = OSUtils::jsonString(m["id"], "");
+					std::string dom = OSUtils::jsonString(m["domain"], "");
+					if (idStr.empty() || dom.empty() || ! std::regex_match(idStr, std::regex("^[0-9a-fA-F]{16}$"))) {
+						continue;
+					}
+					ZgMoon mm;
+					mm.worldId = Utils::hexStrToU64(idStr.c_str());
+					mm.domain = dom;
+					moons.push_back(mm);
+				}
+			}
+			Mutex::Lock l(_zgalaxyDns_m);
+			_zgalaxyMoons.swap(moons);
+		}
+
+		// ZGALAXY engine base URL for the startup auto-import (planet + moons).
+		// e.g. "http://dz.dreamzone.cc:3000" — public download endpoints only.
+		{
+			std::string url = OSUtils::jsonString(lc["zgalaxyEngineUrl"], "");
+			while ((! url.empty()) && ((url[url.length() - 1] == '/') || (url[url.length() - 1] == ' ')))
+				url.erase(url.length() - 1, 1);
+			Mutex::Lock l(_zgalaxyDns_m);
+			_zgalaxyEngineUrl = url;
+		}
+
+		// Bounded validation cadence (minutes). 0 = disabled (pure reactive).
+		// Defaults to the constant if the key is absent or invalid.
+		{
+			const json& v = lc["zgalaxyValidateIntervalMinutes"];
+			int64_t ms = ZT_ZGALAXY_VALIDATE_INTERVAL;
+			if (v.is_number()) {
+				ms = (int64_t)(v.get<double>() * 60000.0);
+			}
+			Mutex::Lock l(_zgalaxyDns_m);
+			_zgalaxyValidateInterval = ms;
 		}
 
 		// Get any trusted paths in local.conf (we'll parse the rest of physical[] elsewhere)
