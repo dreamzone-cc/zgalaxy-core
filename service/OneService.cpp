@@ -931,6 +931,7 @@ class OneServiceImpl : public OneService {
 	std::string _zgalaxyEngineUrl;            // ZGALAXY engine base URL for auto-import ("" = disabled)
 	int64_t _zgalaxyValidateInterval;         // bounded validation cadence (ms); 0 = disabled (pure reactive)
 	int64_t _lastZgalaxyValidate;             // last bounded-validation timestamp
+	uint64_t _zgalaxyPlanetId;                // cached planet world id (avoids copying the World each loop)
 	std::set<uint64_t> _zgalaxyKnownMoons;    // moons.d scan: moon ids we already orbited
 	Mutex _zgalaxyDns_m;                      // protects the above DNS state
 	std::mutex _zgalaxyDnsMutex;              // for the resolver thread wait/notify
@@ -1013,6 +1014,7 @@ class OneServiceImpl : public OneService {
 		, _zgalaxyEngineUrl()
 		, _zgalaxyValidateInterval(0)
 		, _lastZgalaxyValidate(0)
+		, _zgalaxyPlanetId(0)
 		, _zgalaxyKnownMoons()
 		, _zgalaxyDnsThread()
 		, _zgalaxyDnsRun(false)
@@ -1600,6 +1602,7 @@ class OneServiceImpl : public OneService {
 				for (std::vector<World>::const_iterator w(cur.begin()); w != cur.end(); ++w) {
 					_zgalaxyKnownMoons.insert(w->id());
 				}
+				_zgalaxyPlanetId = _node->planet().id();
 			}
 
 			// Start the ZGALAXY dynamic-DNS resolver thread unconditionally; it
@@ -1765,7 +1768,11 @@ class OneServiceImpl : public OneService {
 
 						// Planet disconnect fallback.
 						if (! planetDomain.empty()) {
-							const uint64_t pid = _node->planet().id();
+							uint64_t pid = 0;
+							{
+								Mutex::Lock l(_zgalaxyDns_m);
+								pid = _zgalaxyPlanetId;
+							}
 							if ((! _node->isWorldReachable(pid, now)) && ((now - lastDnsCheck) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
 								fprintf(stderr, "zgalaxy: planet unreachable, re-resolving %s" ZT_EOL_S, planetDomain.c_str());
 								wantResolve = true;
