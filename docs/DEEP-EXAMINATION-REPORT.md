@@ -95,3 +95,27 @@ All ZGALAXY additions across the core files are correct, thread-safe, and
 consistent. Three concrete improvements (F1–F3) and one documentation fix were
 applied during this examination. No functional bugs remain in the examined
 surface.
+
+## 5. Windows-only compile fix (C1083: netdb.h)
+
+**Finding**: on Windows the build failed with `C1083: cannot open netdb.h`,
+while Linux built fine.
+
+**Root cause**: the `__WINDOWS__` macro is **not** a compiler macro — it is
+defined manually in `node/Constants.hpp:93` when `_WIN32/_WIN64` is detected.
+The dynamic-DNS layer added an `#ifdef __WINDOWS__` block near the top of
+`service/OneService.cpp` (line 26) — **before** `Constants.hpp` (and
+`ZeroTierOne.h`) are included. When the preprocessor evaluated that block the
+macro was still undefined, so it took the `#else` branch and tried to include
+`netdb.h` (POSIX, absent on Windows). On Linux the macro is never defined, so the
+`#else` branch was always correct — which is why the bug only appeared on
+Windows.
+
+**Fix** (applied): `#ifdef __WINDOWS__` → `#if defined(_WIN32) || defined(_WIN64)`
+at `service/OneService.cpp:26` — the same convention as `include/ZeroTierOne.h:20`
+and `node/Constants.hpp:89`. All other conditional blocks in `OneService.cpp`
+(lines 97+, 1057, 3556, …) sit **after** `Constants.hpp` is included, so their
+`__WINDOWS__` checks remain correct and were left untouched.
+
+**Verification**: Linux build unaffected; Windows build succeeds (zerotier-one
+1.16.2, no official ZeroTier references, NSIS installer built).

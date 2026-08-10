@@ -23,7 +23,10 @@
 #include <thread>
 #include <vector>
 
-#ifdef __WINDOWS__
+// __WINDOWS__ is only defined by node/Constants.hpp, which is included further
+// down. Use the compiler macros directly (same convention as ZeroTierOne.h:20
+// and Constants.hpp:89) so the Windows socket headers are chosen on Windows.
+#if defined(_WIN32) || defined(_WIN64)
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #else
