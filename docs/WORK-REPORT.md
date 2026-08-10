@@ -176,3 +176,32 @@ Release `v1.16.2-zgalaxy` hosts the prebuilt binaries.
   **Windows** client (deferred by decision).
 - **Security reminders**: rotate the GitHub tokens shown in the chat, the
   Cloudflare token, and treat the API token as ephemeral.
+
+## 9. Latest additions — planet/moon independence (v2) & deep checks
+
+### 9.1 Client v2 — full independence & domain-based connectivity for moons
+- **Auto-import from ZGALAXY** at startup (`zgalaxyEngineUrl`): the client
+  downloads the current `planet` and configured moons from the engine's public
+  endpoints before the node starts — no manual file handling, no recompilation.
+- **Reactive domain resolution covers moons** (`zgalaxyMoons` config): the
+  resolver resolves the planet domain AND every moon domain; `setMoonEndpoints`
+  merges LAN + resolved endpoints and re-links the moon's root peer.
+- **Bounded validation** (`zgalaxyValidateIntervalMinutes`, default 10):
+  gentle periodic address verification; 0 = pure reactive.
+- **Runtime `moons.d` watcher**: new `.moon` files are orbited and removed ones
+  deorbited every 10 s without a restart.
+- **Per-world disconnect fallback** (`isWorldReachable`) re-resolves the domain
+  of the affected world only.
+
+### 9.2 Engine
+- Moon create accepts ZeroTier `host/port` endpoints (and `host:port`).
+
+### 9.3 Deployment & integration (no ztnet changes)
+- dz20, local, and the ztnet controller all run the latest v2 client (the
+  ztnet image was rebuilt to `6557361cd0f`, identity `ef313fb5c9` preserved).
+- `tests/integration-test.sh` — 22/22 deep connectivity & integration tests
+  (domain mechanism, engine, client layer, reactive fallback, mesh ping,
+  client independence) all pass.
+- Deep protocol investigation: `docs/CONNECTION-PROTOCOLS-REPORT.md` — relay
+  via the root (~5 ms) vs direct P2P formed via path introduction (0.86 ms);
+  zero errors across the fleet.
