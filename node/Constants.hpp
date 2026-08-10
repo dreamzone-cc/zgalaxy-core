@@ -513,10 +513,10 @@
 /**
  * ZGALAXY native dynamic-DNS layer
  *
- * The client resolves the configured ZGALAXY domain at startup and re-resolves
- * it only after the root becomes unreachable, to refresh the planet root
- * endpoint(s). There is deliberately NO periodic polling: while the root is
- * reachable the address is left untouched for stability.
+ * Re-resolve cadence used while a world (planet or moon) is unreachable: the
+ * client re-resolves its domain and re-applies the endpoints. Combined with an
+ * optional bounded validation interval (ZT_ZGALAXY_VALIDATE_INTERVAL) there is
+ * no aggressive polling — while the worlds are reachable no DNS queries happen.
  */
 #define ZT_ZGALAXY_DNS_RETRY_INTERVAL 5000
 
