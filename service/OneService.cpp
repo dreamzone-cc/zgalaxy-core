@@ -1221,7 +1221,6 @@ class OneServiceImpl : public OneService {
 		std::set<uint64_t> present;
 		{
 			std::vector<std::string> files(OSUtils::listDirectory(moonsDir.c_str()));
-			fprintf(stderr, "zgalaxy: moons.d scan (%zu files)" ZT_EOL_S, files.size());
 			for (std::vector<std::string>::iterator f(files.begin()); f != files.end(); ++f) {
 				std::size_t dot = f->find_last_of('.');
 				if ((dot == 16) && (f->substr(16) == ".moon")) {
@@ -1735,7 +1734,7 @@ class OneServiceImpl : public OneService {
 				//   - disconnect fallback: re-resolve the affected world,
 				//   - optional bounded validation at zgalaxyValidateIntervalMinutes.
 				// Applies planet AND configured moon endpoints (multi-A merge).
-				{
+				try {
 					int64_t lastDnsCheck = 0;
 					std::string planetDomain;
 					std::vector<InetAddress> planetEps;
@@ -1766,23 +1765,26 @@ class OneServiceImpl : public OneService {
 							}
 						}
 
-						// Planet disconnect fallback.
-						if (! planetDomain.empty()) {
+						// Planet disconnect fallback — check the cheap retry gate
+						// BEFORE the lock-heavy reachability probe.
+						if ((! planetDomain.empty()) && ((now - lastDnsCheck) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
 							uint64_t pid = 0;
 							{
 								Mutex::Lock l(_zgalaxyDns_m);
 								pid = _zgalaxyPlanetId;
 							}
-							if ((! _node->isWorldReachable(pid, now)) && ((now - lastDnsCheck) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
+							if (! _node->isWorldReachable(pid, now)) {
 								fprintf(stderr, "zgalaxy: planet unreachable, re-resolving %s" ZT_EOL_S, planetDomain.c_str());
 								wantResolve = true;
 							}
 						}
 
-						// Moon disconnect fallback (per-moon retry gate).
+						// Moon disconnect fallback (per-moon retry gate first).
 						for (std::size_t i = 0; i < moonEps.size(); ++i) {
-							if ((! _node->isWorldReachable(moonEps[i].first, now)) && ((now - moonLastResolved[i]) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL)) {
-								wantResolve = true;
+							if ((now - moonLastResolved[i]) >= ZT_ZGALAXY_DNS_RETRY_INTERVAL) {
+								if (! _node->isWorldReachable(moonEps[i].first, now)) {
+									wantResolve = true;
+								}
 							}
 						}
 
@@ -1808,6 +1810,10 @@ class OneServiceImpl : public OneService {
 							}
 						}
 					}
+				}
+				catch (...) {
+					// Never let the dynamic-DNS layer take the whole service down.
+					fprintf(stderr, "zgalaxy: apply error ignored (non-fatal)" ZT_EOL_S);
 				}
 
 				// Close TCP fallback tunnel if we have direct UDP

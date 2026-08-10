@@ -93,7 +93,13 @@ EOF"
 # ===========================================================================
 sec "3. Client native dynamic-DNS layer"
 # ---------------------------------------------------------------------------
-t_grep "3.1 client is ONLINE" "ONLINE" sudo -n "$ZT" info
+# ONLINE can lag a moment after (re)start — retry for a few seconds.
+online=""
+for _ in $(seq 1 10); do
+  if sudo -n "$ZT" info 2>/dev/null | grep -q "ONLINE"; then online=1; break; fi
+  sleep 1
+done
+if [ -n "$online" ]; then ok "3.1 client is ONLINE"; else bad "3.1 client is ONLINE"; fi
 t_grep "3.2 planet root peer is present" "$ROOT_ID" sudo -n "$ZT" listpeers
 t "3.3 planet file exists and is external (not baked)" bash -c "[[ -f \"$HOMEDIR/planet\" ]]"
 t "3.4 planet file contains the resolved external IP" bash -c "
