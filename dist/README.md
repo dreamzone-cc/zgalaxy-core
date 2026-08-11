@@ -14,6 +14,19 @@ the ZGALAXY private planet). No build required — download, install, join.
 | `zgalaxy-one-linux-x86_64-ubuntu26` | Linux x86_64 | Ubuntu 26.04 | glibc ≥ 2.42 (Ubuntu 26.04+) · `libminiupnpc21` · `libnatpmp1` · `libssl3` |
 | `zgalaxy-one-linux-x86_64-glibc2.39` | Linux x86_64 | Ubuntu 24.04 | glibc ≥ 2.39 (Ubuntu 24.04+, Debian 13+) · `libminiupnpc17` · `libnatpmp1` · `libssl3` |
 | `zgalaxy-one-linux-x86_64-arch` | Linux x86_64 | Arch Linux | Arch glibc · `miniupnpc` · `libnatpmp` · `openssl` |
+| `windows/zgalaxy-one-windows-x86_64.exe` | Windows x86_64 | Windows (VS2022 + MSVC) | Windows 10/11 · NDIS6 tap driver bundled in `windows/driver/` |
+| `windows/ZGALAXY-One-Setup.exe` | Windows x86_64 | Windows (NSIS) | Installer — installs service, firewall rules, driver |
+
+## Install (Windows)
+
+Run `windows/ZGALAXY-One-Setup.exe` as administrator. It installs to
+`C:\Program Files\ZGALAXY One\`, registers the `ZeroTierOneService` service
+(auto-start), adds firewall rules for UDP `9993`, and bundles the NDIS6 tap
+driver (`zttap300`) in `windows/driver/`.
+
+Raw binary alternative: download `windows/zgalaxy-one-windows-x86_64.exe`
+(works as `zerotier-one`, `zerotier-cli`, and `zerotier-idtool`) and run it
+from an elevated prompt.
 
 ## Install (Linux)
 

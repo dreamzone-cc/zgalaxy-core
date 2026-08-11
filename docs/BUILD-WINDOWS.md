@@ -34,6 +34,13 @@ This:
 4. Builds the engine project → `windows\Build\x64\Release\zerotier-one_x64.exe`.
 5. Copies the outputs into `windows\dist\`.
 
+> **Note (Windows compile fix):** `service/OneService.cpp` previously failed on
+> Windows with `error C1083: cannot open include file: 'netdb.h'`. The dynamic-DNS
+> layer included a `#ifdef __WINDOWS__` block before `node/Constants.hpp` (which
+> defines that macro) is included, so the preprocessor took the `#else` branch and
+> tried to include POSIX headers. Fixed by using `#if defined(_WIN32) || defined(_WIN64)`
+> (compiler-defined, order-independent). See `docs/FIX-ONESERVICE-WINDOWS-INCLUDE.md`.
+
 ### Build the installer
 ```powershell
 # install NSIS from https://nsis.sourceforge.io

@@ -1,6 +1,21 @@
 ZeroTier Release Notes
 ======
 
+## 2026-08-11 -- Version 1.16.2 (ZGALAXY Windows x64)
+
+  * First Windows x64 build of the ZGALAXY client from the latest source
+    (`zgalaxy-core` HEAD `1aa333dd`), shipped in `dist/windows/` and the
+    `v1.16.2-zgalaxy` Release:
+    * `zgalaxy-one-windows-x86_64.exe` (runs as `zerotier-one`/`zerotier-cli`/`zerotier-idtool`)
+    * `ZGALAXY-One-Setup.exe` (NSIS installer: service + firewall + NDIS6 tap driver)
+    * `driver/` — `zttap300.{cat,inf,sys}`
+  * Fix: `service/OneService.cpp` compiled on Windows with `error C1083
+    ('netdb.h')` because the dynamic-DNS include block tested `__WINDOWS__`
+    before `node/Constants.hpp` (which defines it) was included. The block now
+    tests `#if defined(_WIN32) || defined(_WIN64)`.
+  * Same IP-agnostic design as the Linux builds: no embedded IP, planet supplied
+    at runtime by the native dynamic-DNS layer / watchdog.
+
 ## 2026-05-20 -- Version 1.16.2
  
   * Fixed line endings for the zttap300.inf for the Windows ARM x64 install.

@@ -205,3 +205,25 @@ Release `v1.16.2-zgalaxy` hosts the prebuilt binaries.
 - Deep protocol investigation: `docs/CONNECTION-PROTOCOLS-REPORT.md` — relay
   via the root (~5 ms) vs direct P2P formed via path introduction (0.86 ms);
   zero errors across the fleet.
+
+### 9.4 Windows client — built, fixed & released (2026-08-11)
+
+- **Windows x64 build** produced locally (VS2022 + MSVC, Release/x64) from the
+  latest `zgalaxy-core` HEAD (`1aa333dd`): `rustybits/zeroidc` (Rust lib) then
+  `ZeroTierOne.vcxproj`, outputs collected into `windows\dist\`.
+- **Compile fix required**: `service/OneService.cpp` failed with
+  `error C1083: cannot open include file: 'netdb.h'` because the dynamic-DNS
+  layer used `#ifdef __WINDOWS__` before `node/Constants.hpp` (which defines the
+  macro) is included. Changed to `#if defined(_WIN32) || defined(_WIN64)`.
+  Documented in `docs/FIX-ONESERVICE-WINDOWS-INCLUDE.md`.
+- **Artifacts shipped** in `dist/windows/`:
+  - `zgalaxy-one-windows-x86_64.exe` (also usable as `zerotier-cli`/`zerotier-idtool`)
+  - `ZGALAXY-One-Setup.exe` (NSIS installer: service + firewall + bundled NDIS6 driver)
+  - `driver/` — `zttap300.{cat,inf,sys}` NDIS6 tap driver
+- **Verified**: `-v` → `1.16.2`; no official ZeroTier references
+  (`my.zerotier.com`, `central.zerotier.com`, `204.80.128`) in the binary;
+  planet world `149604618` from `zgalaxy/planet.bin`.
+- **Release `v1.16.2-zgalaxy`** updated with the Windows assets alongside the
+  Linux binaries.
+- Docs updated: `dist/README.md` (Windows install section), `docs/BUILD-WINDOWS.md`
+  (compile-fix note), this report.
