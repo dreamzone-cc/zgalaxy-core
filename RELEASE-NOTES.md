@@ -1,92 +1,53 @@
-﻿# ZGALAXY One — Release Notes
+﻿# ZGALAXY One Release Notes
 
-## v1.16.2-zgalaxy — 2026-08-11 (IP-Agnostic Build)
+## v1.16.2-zgalaxy (IP-Agnostic Build, 2026-08-11)
 
-The latest ZGALAXY One client, built from a single source tree for **Linux and
-Windows x64**. This release centers on a **native, domain-based dynamic-IP
-layer** and full **planet/moon independence**, with a fully integrated Windows
-Desktop Control Panel.
+The latest ZGALAXY One client, built from a single source tree for Linux and
+Windows x64. This release centers on a native, domain-based dynamic-IP layer
+and full planet/moon independence, with an integrated Windows Desktop Control
+Panel.
 
----
+Changes are marked as General (all platforms), Windows only, or Linux only.
 
-### Highlights
+### Key changes
 
-| # | Change | Scope |
-|---|--------|-------|
-| 1 | Native reactive dynamic-DNS layer (no fixed IP ever baked) | All platforms |
-| 2 | Full planet/moon independence (worlds are importable files) | All platforms |
-| 3 | Desktop Control Panel bundled in the Windows installer | Windows only |
-| 4 | Windows build fixes (compile error, installer, build pipeline) | Windows only |
-| 5 | IP-agnostic Linux binaries with embedded controller | Linux only |
+1. Native reactive dynamic-DNS layer (General)
+   - Connects via a reference domain name; resolves at startup and re-resolves
+     on disconnect. No fixed IP is ever baked or configured.
+   - Bounded validation plus automatic re-resolution on connection loss, with
+     no service restart.
+   - Multi-A record support and graceful re-link.
 
----
+2. Planet and moon independence (General)
+   - Planet and moons are external, importable world files.
+   - Auto-import from the ZGALAXY engine at startup over public endpoints.
+   - Moons use the domain mechanism too; endpoints refresh dynamically.
+   - Runtime moons.d watcher detects added or removed moon files within
+     seconds, no restart.
 
-### 1. Native reactive dynamic-DNS layer — *All platforms*
+3. Desktop Control Panel bundled (Windows only)
+   - The Windows installer bundles the Desktop Control Panel
+     (zgalaxy_desktop_ui / zerotier_desktop_ui).
 
-- Connects via a reference domain name (`dz.dreamzone.cc`); the client resolves
-  it at startup and re-resolves it on disconnect — **no fixed IP is ever baked
-  or configured**.
-- **Bounded validation** (`zgalaxyValidateIntervalMinutes`) plus automatic
-  re-resolution of the affected world on connection loss — no service restart.
-- Multi-A record support with graceful re-link (peer reset).
+4. Windows build and runtime fixes (Windows only)
+   - Fixed the Windows-only compile error C1083 (netdb.h) in
+     service/OneService.cpp (now tests _WIN32/_WIN64).
+   - NSIS installer with service, firewall, and NDIS6 tap driver.
 
-### 2. Full planet/moon independence — *All platforms*
+5. IP-agnostic Linux binaries (Linux only)
+   - Prebuilt binaries: arch, glibc2.39, ubuntu26, with the controller
+     enabled (ZT_NONFREE=1).
 
-- The planet and moons are **external, importable world files** — swap or add
-  them without recompilation.
-- **Auto-import from the ZGALAXY engine** at startup (`zgalaxyEngineUrl`):
-  downloads the current `planet` and configured moons over public endpoints.
-- **Moons use the domain mechanism too** (`zgalaxyMoons`) — endpoints are
-  resolved and refreshed dynamically.
-- **Runtime `moons.d` watcher**: adding/removing a `.moon` file is picked up in
-  seconds — no restart.
-
-### 3. Desktop Control Panel bundled — *Windows only*
-
-- **New**: `DesktopUI/` (Rust + libui-ng + tray) is now built automatically by
-  `windows/build-windows.ps1` and shipped as `zgalaxy_desktop_ui.exe` /
-  `zerotier_desktop_ui.exe`.
-- Fixes the previous installer issue where the Control Panel was referenced but
-  never built, leaving its shortcuts pointing at a missing binary.
-- Installed with Start Menu + Desktop shortcuts by `ZGALAXY-One-Setup.exe`.
-
-### 4. Windows build & runtime fixes — *Windows only*
-
-- **Fixed Windows-only compile error `C1083 (netdb.h)`** in
-  `service/OneService.cpp`: the dynamic-DNS include block now tests
-  `#if defined(_WIN32) || defined(_WIN64)` instead of `__WINDOWS__` (which is
-  only defined after `node/Constants.hpp` is included).
-- **Fixed `rustybits/zeroidc` linking**: built in `release` mode to match the
-  path expected by `ZeroTierOne.vcxproj` (Release/x64).
-- **Fixed MSBuild `SolutionDir` handling** so the engine links correctly even
-  when the checkout path contains spaces.
-- **Fixed the NSIS installer** to actually package the binaries it references
-  (no more `File: ... no files found` warnings).
-
-### 5. IP-agnostic Linux binaries — *Linux only*
-
-- Three prebuilt x86_64 binaries: `-arch`, `-glibc2.39`, `-ubuntu26`.
-- All **IP-agnostic** (zero embedded IPs) and built with the embedded
-  controller enabled (`ZT_NONFREE=1`).
-
----
-
-### Verification
-
-- Deep integration test suite (`tests/integration-test.sh`) — **22/22 passing**
-  (domain mechanism, engine integration, client layer, reactive fallback, mesh
-  ping, client independence).
-- Binaries verified against official ZeroTier references
-  (`my.zerotier.com`, `central.zerotier.com`, `204.80.128`) — none present.
-- Planet world `149604618` supplied at runtime from `zgalaxy/planet.bin`.
+6. Verification (General)
+   - Integration deep-test suite (tests/integration-test.sh), 22/22 passing.
+   - Clean binaries: no embedded IPs, no official ZeroTier endpoints.
 
 ### Artifacts
 
-- **Windows x64**: `zgalaxy-one-windows-x64.exe`, `ZGALAXY-One-Setup.exe`,
-  `zgalaxy-one-windows-x64.zip`, `zgalaxy_desktop_ui.exe` /
-  `zerotier_desktop_ui.exe`, NDIS6 tap driver (`zttap300.{cat,inf,sys}`).
-- **Linux x86_64**: `zgalaxy-one-linux-x86_64-{arch,glibc2.39,ubuntu26}`.
-- Full source and docs: `dist/` in the repo, plus the `v1.16.2-zgalaxy` Release.
+- Linux: zgalaxy-one-linux-x86_64-arch, -glibc2.39, -ubuntu26
+- Windows: zgalaxy-one-windows-x64.exe, ZGALAXY-One-Setup.exe,
+  zgalaxy-one-windows-x64.zip, driver (zttap300.cat/inf/sys),
+  zgalaxy_desktop_ui.exe / zerotier_desktop_ui.exe
 
-> The ZGALAXY engine (planet/moon platform) is released separately in
-> `dreamzone-cc/ZGALAXY`.
+The ZGALAXY engine (planet/moon platform) is released separately in
+dreamzone-cc/ZGALAXY (v1.3.1).
