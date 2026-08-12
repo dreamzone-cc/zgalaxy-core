@@ -56,10 +56,16 @@ makensis .\windows\installer\ZGALAXY-One.nsi
 Produces `windows\installer\ZGALAXY-One-Setup.exe`.
 
 ## What the installer does
-- Installs the three binaries to `C:\Program Files\ZGALAXY One\`.
+- Installs the binaries + Desktop UI to `C:\Program Files\ZGALAXY One\`.
 - Registers the **ZeroTierOneService** Windows service (auto-start).
 - Adds firewall rules for UDP `9993` inbound + the binary.
-- Provides an uninstaller (keeps your network data in `%ProgramData%\ZeroTier\One`).
+- Installs the **ZGALAXY planet** and a default `local.conf` (with
+  `zgalaxyDomain` + `zgalaxyEngineUrl`) into `%ProgramData%\ZeroTier\One\` so a
+  **fresh machine connects immediately** (the client is IP-agnostic — without
+  the planet file it stays OFFLINE; an existing `local.conf` is never
+  overwritten on upgrades).
+- Provides an uninstaller (keeps your network identity in
+  `%ProgramData%\ZeroTier\One`).
 
 ## ⚠️ NDIS6 tap driver note
 ZeroTier Windows clients use the **NDIS6 tap driver** (`zttap300`) to create

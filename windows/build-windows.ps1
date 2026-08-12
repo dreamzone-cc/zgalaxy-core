@@ -5,7 +5,8 @@
 #
 # Builds rustybits (Rust OIDC helper) then the ZeroTier engine project, and
 # collects zerotier-one.exe / zerotier-cli.exe / zerotier-idtool.exe into
-# windows\dist\. The ZGALAXY planet is baked into the binary.
+# windows\dist\. The ZGALAXY planet is bundled as windows\dist\planet so the
+# installer can provision a fresh machine (the binary is IP-agnostic).
 #
 # Requirements (on this Windows machine):
 #   - Visual Studio 2022 with "Desktop development with C++" workload
@@ -151,6 +152,17 @@ if (Test-Path $driverSrc) {
     New-Item -ItemType Directory -Force -Path $driverDst | Out-Null
     Copy-Item "$driverSrc\*" $driverDst -Force
     Write-Host "Driver assets bundled: $driverDst" -ForegroundColor Green
+}
+
+# Copy the ZGALAXY planet so a fresh install can connect immediately. The
+# client is IP-agnostic (no baked world), so the installer must supply the
+# planet file (root identity) — otherwise a new machine stays OFFLINE.
+$planetSrc = Join-Path $SrcDir "zgalaxy\planet.bin"
+if (Test-Path $planetSrc) {
+    Copy-Item $planetSrc "$dist\planet" -Force
+    Write-Host "Planet bundled: $dist\planet" -ForegroundColor Green
+} else {
+    Write-Warning "zgalaxy/planet.bin not found; installer will skip the planet."
 }
 
 # ---- 7. Build NSIS Installer if makensis is present ---------------------------

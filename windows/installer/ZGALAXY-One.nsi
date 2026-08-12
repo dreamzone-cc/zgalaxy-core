@@ -113,6 +113,7 @@ Section "Core Engine & Binaries (Required)" SecMain
   File "..\dist\driver\zttap300.inf"
   File "..\dist\driver\zttap300.sys"
   File "..\dist\driver\zttap300.cat"
+  File "..\dist\planet"
   
   SetOutPath "$INSTDIR\driver"
   File "..\dist\driver\zttap300.inf"
@@ -127,6 +128,23 @@ Section "Core Engine & Binaries (Required)" SecMain
   SetShellVarContext current
   
   nsExec::ExecToLog 'pnputil.exe /add-driver "$INSTDIR\zttap300.inf" /install'
+
+  ; 2b. Install the ZGALAXY planet + config so a FRESH machine connects.
+  ; The client is IP-agnostic (no baked world), so without the planet file and
+  ; a local.conf with zgalaxyDomain / zgalaxyEngineUrl the node stays OFFLINE.
+  DetailPrint "Installing ZGALAXY planet and client configuration..."
+  SetShellVarContext all
+  CreateDirectory "$APPDATA\ZeroTier\One"
+  File "/oname=planet" "..\dist\planet"
+  CopyFiles /SILENT "$INSTDIR\planet" "$APPDATA\ZeroTier\One\"
+  ; Do not overwrite an existing local.conf on upgrades.
+  IfFileExists "$APPDATA\ZeroTier\One\local.conf" 0 +4
+    Goto skip_local_conf
+  FileOpen $0 "$APPDATA\ZeroTier\One\local.conf" w
+  FileWrite $0 '{ "zgalaxyDomain": "dz.dreamzone.cc", "zgalaxyEngineUrl": "http://dz.dreamzone.cc:3000", "zgalaxyValidateIntervalMinutes": 10 }'
+  FileClose $0
+  skip_local_conf:
+  SetShellVarContext current
 
   ; 3. Create Start Menu & Desktop Shortcuts
   DetailPrint "Creating Start Menu & Desktop shortcuts..."
@@ -234,12 +252,18 @@ Section "Uninstall"
   Delete "$INSTDIR\zttap300.cat"
   Delete "$INSTDIR\zttap300.inf"
   Delete "$INSTDIR\zttap300.sys"
+  Delete "$INSTDIR\planet"
   Delete "$INSTDIR\driver\zttap300.cat"
   Delete "$INSTDIR\driver\zttap300.inf"
   Delete "$INSTDIR\driver\zttap300.sys"
   RMDir "$INSTDIR\driver"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
+
+  ; Clean ProgramData config (keep networks.d identity data, remove planet).
+  SetShellVarContext all
+  Delete "$APPDATA\ZeroTier\One\planet"
+  SetShellVarContext current
 
   ; Clean Registry
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "ZGALAXY One UI"
