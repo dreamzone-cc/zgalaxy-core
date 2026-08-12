@@ -15,14 +15,17 @@ the ZGALAXY private planet). No build required — download, install, join.
 | `zgalaxy-one-linux-x86_64-glibc2.39` | Linux x86_64 | Ubuntu 24.04 | glibc ≥ 2.39 (Ubuntu 24.04+, Debian 13+) · `libminiupnpc17` · `libnatpmp1` · `libssl3` |
 | `zgalaxy-one-linux-x86_64-arch` | Linux x86_64 | Arch Linux | Arch glibc · `miniupnpc` · `libnatpmp` · `openssl` |
 | `windows/zgalaxy-one-windows-x86_64.exe` | Windows x86_64 | Windows (VS2022 + MSVC) | Windows 10/11 · NDIS6 tap driver bundled in `windows/driver/` |
-| `windows/ZGALAXY-One-Setup.exe` | Windows x86_64 | Windows (NSIS) | Installer — installs service, firewall rules, driver |
+| `windows/ZGALAXY-One-Setup.exe` | Windows x86_64 | Windows (NSIS) | Installer — installs service, firewall rules, driver, Desktop UI |
+| `windows/zgalaxy_desktop_ui.exe` | Windows x86_64 | Windows (Rust + libui-ng) | Desktop Control Panel (tray + UI for the local service) |
 
 ## Install (Windows)
 
 Run `windows/ZGALAXY-One-Setup.exe` as administrator. It installs to
 `C:\Program Files\ZGALAXY One\`, registers the `ZeroTierOneService` service
-(auto-start), adds firewall rules for UDP `9993`, and bundles the NDIS6 tap
-driver (`zttap300`) in `windows/driver/`.
+(auto-start), adds firewall rules for UDP `9993`, bundles the NDIS6 tap
+driver (`zttap300`) in `windows/driver/`, and installs the **Desktop Control
+Panel** (`zerotier_desktop_ui.exe` / `zgalaxy_desktop_ui.exe`) with Start Menu
+and Desktop shortcuts.
 
 Raw binary alternative: download `windows/zgalaxy-one-windows-x86_64.exe`
 (works as `zerotier-one`, `zerotier-cli`, and `zerotier-idtool`) and run it

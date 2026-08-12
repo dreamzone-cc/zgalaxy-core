@@ -1,0 +1,15 @@
+.DS*
+.Icon*
+/.idea
+/target
+/ZeroTier.app
+/libui-ng/build
+*.o
+*.a
+*.dSym
+*.dylib
+*.so
+*.lib
+*.exe
+*.deb
+.vscode/

@@ -216,9 +216,18 @@ Release `v1.16.2-zgalaxy` hosts the prebuilt binaries.
   layer used `#ifdef __WINDOWS__` before `node/Constants.hpp` (which defines the
   macro) is included. Changed to `#if defined(_WIN32) || defined(_WIN64)`.
   Documented in `docs/FIX-ONESERVICE-WINDOWS-INCLUDE.md`.
+- **Desktop UI now built & bundled**: `build-windows.ps1` previously never built
+  the Desktop UI, so the NSIS installer silently skipped `zerotier_desktop_ui.exe` /
+  `zgalaxy_desktop_ui.exe` (warnings 7010) and the shortcuts/registry pointed at a
+  missing binary. The UI source was added as `DesktopUI/` (Rust + libui-ng + tray,
+  forked from `zerotier/DesktopUI`, renamed to `zgalaxy_desktop_ui`), and the
+  build script now builds libui-ng (Meson/Ninja under MSVC env), the tray helper
+  (GCC/make), and the Rust app, then copies both aliases into `windows/dist`.
+  NSIS now packages the Control Panel with zero warnings.
 - **Artifacts shipped** in `dist/windows/`:
   - `zgalaxy-one-windows-x86_64.exe` (also usable as `zerotier-cli`/`zerotier-idtool`)
-  - `ZGALAXY-One-Setup.exe` (NSIS installer: service + firewall + bundled NDIS6 driver)
+  - `ZGALAXY-One-Setup.exe` (NSIS installer: service + firewall + bundled NDIS6 driver + Desktop UI)
+  - `zgalaxy_desktop_ui.exe` / `zerotier_desktop_ui.exe` (Desktop Control Panel)
   - `driver/` — `zttap300.{cat,inf,sys}` NDIS6 tap driver
 - **Verified**: `-v` → `1.16.2`; no official ZeroTier references
   (`my.zerotier.com`, `central.zerotier.com`, `204.80.128`) in the binary;

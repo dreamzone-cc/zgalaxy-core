@@ -21,6 +21,9 @@ The artifact contains:
 ### Prerequisites
 - **Visual Studio 2022** with the *Desktop development with C++* workload
 - **Rust** toolchain (installed automatically by the script if missing)
+- For the Desktop UI (`DesktopUI/`, Rust + libui-ng + tray): **Meson/Ninja**,
+  **MinGW GCC + GNU make**, and the `x86_64-pc-windows-msvc` Rust target.
+  The build script uses them if present.
 
 ### Steps
 ```powershell
@@ -30,9 +33,13 @@ The artifact contains:
 This:
 1. Locates MSBuild via VS2022.
 2. Installs Rust (if missing) and the `x86_64-pc-windows-msvc` target.
-3. Builds `rustybits/zeroidc` (Rust helper lib).
+3. Builds `rustybits/zeroidc` (Rust helper lib, release).
 4. Builds the engine project → `windows\Build\x64\Release\zerotier-one_x64.exe`.
-5. Copies the outputs into `windows\dist\`.
+5. Builds the Desktop UI (`DesktopUI/zgalaxy_desktop_ui.exe`) — libui-ng via
+   Meson/Ninja (under the MSVC env), the tray helper via GCC/make, then the Rust
+   app — and copies it into `windows\dist\` as both `zerotier_desktop_ui.exe`
+   and `zgalaxy_desktop_ui.exe`.
+6. Copies the outputs into `windows\dist\`.
 
 > **Note (Windows compile fix):** `service/OneService.cpp` previously failed on
 > Windows with `error C1083: cannot open include file: 'netdb.h'`. The dynamic-DNS
